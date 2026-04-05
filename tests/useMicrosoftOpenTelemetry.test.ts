@@ -6,17 +6,17 @@ import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 // Mock the setup modules so we can verify orchestration without side effects
 vi.mock("../src/setup/azureMonitor.js", () => ({
   setupAzureMonitor: vi.fn(),
-  teardownAzureMonitor: vi.fn().mockResolvedValue(undefined),
+  shutdownAzureMonitor: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../src/setup/otlp.js", () => ({
   setupOtlp: vi.fn(),
-  teardownOtlp: vi.fn().mockResolvedValue(undefined),
+  shutdownOtlp: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../src/setup/a365.js", () => ({
   setupA365: vi.fn(),
-  teardownA365: vi.fn().mockResolvedValue(undefined),
+  shutdownA365: vi.fn().mockResolvedValue(undefined),
 }));
 
 import {
@@ -29,9 +29,9 @@ import type {
   OtlpOptions,
   A365Options,
 } from "../src/index.js";
-import { setupAzureMonitor, teardownAzureMonitor } from "../src/setup/azureMonitor.js";
-import { setupOtlp, teardownOtlp } from "../src/setup/otlp.js";
-import { setupA365, teardownA365 } from "../src/setup/a365.js";
+import { setupAzureMonitor, shutdownAzureMonitor } from "../src/setup/azureMonitor.js";
+import { setupOtlp, shutdownOtlp } from "../src/setup/otlp.js";
+import { setupA365, shutdownA365 } from "../src/setup/a365.js";
 
 const OTLP_ENV_KEYS = [
   "OTEL_EXPORTER_OTLP_ENDPOINT",
@@ -374,19 +374,19 @@ describe("shutdownMicrosoftOpenTelemetry", () => {
     expect(result).toBeInstanceOf(Promise);
   });
 
-  it("should call all teardown functions", async () => {
+  it("should call all shutdown functions", async () => {
     await shutdownMicrosoftOpenTelemetry();
-    expect(teardownAzureMonitor).toHaveBeenCalledOnce();
-    expect(teardownOtlp).toHaveBeenCalledOnce();
-    expect(teardownA365).toHaveBeenCalledOnce();
+    expect(shutdownAzureMonitor).toHaveBeenCalledOnce();
+    expect(shutdownOtlp).toHaveBeenCalledOnce();
+    expect(shutdownA365).toHaveBeenCalledOnce();
   });
 
-  it("should resolve when all teardowns resolve", async () => {
+  it("should resolve when all shutdowns resolve", async () => {
     await expect(shutdownMicrosoftOpenTelemetry()).resolves.toBeUndefined();
   });
 
-  it("should propagate rejection from teardownAzureMonitor", async () => {
-    vi.mocked(teardownAzureMonitor).mockRejectedValueOnce(
+  it("should propagate rejection from shutdownAzureMonitor", async () => {
+    vi.mocked(shutdownAzureMonitor).mockRejectedValueOnce(
       new Error("azure shutdown failure"),
     );
     await expect(shutdownMicrosoftOpenTelemetry()).rejects.toThrow(
@@ -394,8 +394,8 @@ describe("shutdownMicrosoftOpenTelemetry", () => {
     );
   });
 
-  it("should propagate rejection from teardownOtlp", async () => {
-    vi.mocked(teardownOtlp).mockRejectedValueOnce(
+  it("should propagate rejection from shutdownOtlp", async () => {
+    vi.mocked(shutdownOtlp).mockRejectedValueOnce(
       new Error("otlp shutdown failure"),
     );
     await expect(shutdownMicrosoftOpenTelemetry()).rejects.toThrow(
@@ -403,8 +403,8 @@ describe("shutdownMicrosoftOpenTelemetry", () => {
     );
   });
 
-  it("should propagate rejection from teardownA365", async () => {
-    vi.mocked(teardownA365).mockRejectedValueOnce(
+  it("should propagate rejection from shutdownA365", async () => {
+    vi.mocked(shutdownA365).mockRejectedValueOnce(
       new Error("a365 shutdown failure"),
     );
     await expect(shutdownMicrosoftOpenTelemetry()).rejects.toThrow(

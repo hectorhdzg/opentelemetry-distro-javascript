@@ -26,6 +26,6 @@ export function setupOtlp(_options: OtlpOptions): void {
 /**
  * Shut down OTLP exporters, flushing pending telemetry.
  */
-export async function teardownOtlp(): Promise<void> {
+export async function shutdownOtlp(): Promise<void> {
     // Phase 4: Flush and shut down OTLP exporters.
 }

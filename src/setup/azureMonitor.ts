@@ -12,7 +12,7 @@
 
 import {
     useAzureMonitor,
-    shutdownAzureMonitor,
+    shutdownAzureMonitor as shutdownAzureMonitorUpstream,
 } from "@azure/monitor-opentelemetry";
 import type { AzureMonitorOpenTelemetryOptions } from "@azure/monitor-opentelemetry";
 
@@ -31,6 +31,6 @@ export function setupAzureMonitor(
 /**
  * Shut down Azure Monitor, flushing pending telemetry.
  */
-export async function teardownAzureMonitor(): Promise<void> {
-    await shutdownAzureMonitor();
+export async function shutdownAzureMonitor(): Promise<void> {
+    await shutdownAzureMonitorUpstream();
 }

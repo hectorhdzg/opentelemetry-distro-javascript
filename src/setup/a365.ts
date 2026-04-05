@@ -26,6 +26,6 @@ export function setupA365(_options: A365Options): void {
 /**
  * Shut down A365 extensions, flushing pending telemetry.
  */
-export async function teardownA365(): Promise<void> {
+export async function shutdownA365(): Promise<void> {
     // Phase 6: Flush and shut down A365 components.
 }

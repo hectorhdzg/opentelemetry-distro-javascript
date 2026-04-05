@@ -9,9 +9,9 @@
  * and Microsoft-specific extensions.
  */
 
-import { setupAzureMonitor, teardownAzureMonitor } from "./setup/azureMonitor.js";
-import { setupOtlp, teardownOtlp } from "./setup/otlp.js";
-import { setupA365, teardownA365 } from "./setup/a365.js";
+import { setupAzureMonitor, shutdownAzureMonitor } from "./setup/azureMonitor.js";
+import { setupOtlp, shutdownOtlp } from "./setup/otlp.js";
+import { setupA365, shutdownA365 } from "./setup/a365.js";
 import { isOtlpConfiguredViaEnvironment } from "./setup/otlpEnv.js";
 
 export type {
@@ -64,8 +64,8 @@ export function useMicrosoftOpenTelemetry(
  */
 export async function shutdownMicrosoftOpenTelemetry(): Promise<void> {
     await Promise.all([
-        teardownAzureMonitor(),
-        teardownOtlp(),
-        teardownA365(),
+        shutdownAzureMonitor(),
+        shutdownOtlp(),
+        shutdownA365(),
     ]);
 }
