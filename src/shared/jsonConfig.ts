@@ -7,7 +7,6 @@ import fs from "node:fs";
 import path from "node:path";
 import type {
   BrowserSdkLoaderOptions,
-  AzureMonitorOpenTelemetryOptions,
   InstrumentationOptions,
 } from "../types.js";
 import type { AzureMonitorExporterOptions } from "@azure/monitor-opentelemetry-exporter";
@@ -41,7 +40,7 @@ const ENV_CONTENT = "APPLICATIONINSIGHTS_CONFIGURATION_CONTENT";
  * Azure Monitor OpenTelemetry Client Configuration through JSON File
  * @internal
  */
-export class JsonConfig implements AzureMonitorOpenTelemetryOptions {
+export class JsonConfig {
   /** The rate of telemetry items tracked that should be transmitted (Default 1.0) */
   public samplingRatio?: number;
   /** The maximum number of spans to sample per second. */
@@ -106,15 +105,15 @@ export class JsonConfig implements AzureMonitorOpenTelemetryOptions {
       }
     }
     try {
-      const jsonConfig: AzureMonitorOpenTelemetryOptions = JSON.parse(jsonString);
-      this.azureMonitorExporterOptions = jsonConfig.azureMonitorExporterOptions;
-      this.samplingRatio = jsonConfig.samplingRatio;
-      this.tracesPerSecond = jsonConfig.tracesPerSecond;
-      this.instrumentationOptions = jsonConfig.instrumentationOptions;
-      this.browserSdkLoaderOptions = jsonConfig.browserSdkLoaderOptions;
-      this.enableLiveMetrics = jsonConfig.enableLiveMetrics;
-      this.enableStandardMetrics = jsonConfig.enableStandardMetrics;
-      this.enableTraceBasedSamplingForLogs = jsonConfig.enableTraceBasedSamplingForLogs;
+      const jsonConfig = JSON.parse(jsonString) as Record<string, unknown>;
+      this.azureMonitorExporterOptions = jsonConfig.azureMonitorExporterOptions as AzureMonitorExporterOptions | undefined;
+      this.samplingRatio = jsonConfig.samplingRatio as number | undefined;
+      this.tracesPerSecond = jsonConfig.tracesPerSecond as number | undefined;
+      this.instrumentationOptions = jsonConfig.instrumentationOptions as InstrumentationOptions | undefined;
+      this.browserSdkLoaderOptions = jsonConfig.browserSdkLoaderOptions as BrowserSdkLoaderOptions | undefined;
+      this.enableLiveMetrics = jsonConfig.enableLiveMetrics as boolean | undefined;
+      this.enableStandardMetrics = jsonConfig.enableStandardMetrics as boolean | undefined;
+      this.enableTraceBasedSamplingForLogs = jsonConfig.enableTraceBasedSamplingForLogs as boolean | undefined;
     } catch (err) {
       Logger.getInstance().info("Missing or invalid JSON config file: ", err);
     }

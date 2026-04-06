@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import type { AzureMonitorOpenTelemetryOptions } from "../types.js";
 import type { Sampler } from "@opentelemetry/sdk-trace-base";
 import {
   AlwaysOffSampler,
@@ -35,7 +34,7 @@ const SUPPORTED_OTEL_SAMPLERS = [
  * Azure Monitor OpenTelemetry Client Configuration through Env variables
  * @internal
  */
-export class EnvConfig implements AzureMonitorOpenTelemetryOptions {
+export class EnvConfig {
   /** The rate of telemetry items tracked that should be transmitted (Default 1.0) */
   public samplingRatio?: number;
   /** The maximum number of spans to sample per second. (Default undefined)*/

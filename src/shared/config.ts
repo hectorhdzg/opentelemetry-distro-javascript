@@ -10,9 +10,9 @@ import {
 } from "@opentelemetry/resources";
 import type {
   BrowserSdkLoaderOptions,
-  AzureMonitorOpenTelemetryOptions,
   InstrumentationOptions,
 } from "../types.js";
+import type { MicrosoftOpenTelemetryOptions } from "../distro/types.js";
 import type { Sampler } from "@opentelemetry/sdk-trace-base";
 import type { AzureMonitorExporterOptions } from "@azure/monitor-opentelemetry-exporter";
 import { EnvConfig } from "./envConfig.js";
@@ -26,9 +26,9 @@ import {
 } from "@opentelemetry/resource-detector-azure";
 
 /**
- * Azure Monitor OpenTelemetry Client Configuration
+ * Internal configuration that merges global and Azure Monitor-scoped options.
  */
-export class InternalConfig implements AzureMonitorOpenTelemetryOptions {
+export class InternalConfig {
   /** The rate of telemetry items tracked that should be transmitted (Default 1.0) */
   public samplingRatio: number;
   /** The maximum number of spans to sample per second. */
@@ -68,9 +68,11 @@ export class InternalConfig implements AzureMonitorOpenTelemetryOptions {
   public browserSdkLoaderOptions: BrowserSdkLoaderOptions;
 
   /**
-   * Initializes a new instance of the AzureMonitorOpenTelemetryOptions class.
+   * Initializes a new instance of InternalConfig.
+   * Accepts MicrosoftOpenTelemetryOptions (distro-level) — global options come
+   * from the top level, Azure Monitor-specific options from the azureMonitor key.
    */
-  constructor(options?: AzureMonitorOpenTelemetryOptions) {
+  constructor(options?: MicrosoftOpenTelemetryOptions) {
     // Default values
     this.azureMonitorExporterOptions = {};
     this.samplingRatio = 1;
@@ -97,11 +99,8 @@ export class InternalConfig implements AzureMonitorOpenTelemetryOptions {
     };
 
     if (options) {
-      // Merge default with provided options
-      this.azureMonitorExporterOptions = Object.assign(
-        this.azureMonitorExporterOptions,
-        options.azureMonitorExporterOptions,
-      );
+      const azureMonitor = options.azureMonitor;
+      // Global options
       this.instrumentationOptions = Object.assign(
         this.instrumentationOptions,
         options.instrumentationOptions,
@@ -111,26 +110,34 @@ export class InternalConfig implements AzureMonitorOpenTelemetryOptions {
         options.samplingRatio !== undefined ? options.samplingRatio : this.samplingRatio;
       this.tracesPerSecond =
         options.tracesPerSecond !== undefined ? options.tracesPerSecond : this.tracesPerSecond;
-      this.browserSdkLoaderOptions = Object.assign(
-        this.browserSdkLoaderOptions,
-        options.browserSdkLoaderOptions,
-      );
-      this.enableLiveMetrics =
-        options.enableLiveMetrics !== undefined
-          ? options.enableLiveMetrics
-          : this.enableLiveMetrics;
-      this.enableStandardMetrics =
-        options.enableStandardMetrics !== undefined
-          ? options.enableStandardMetrics
-          : this.enableStandardMetrics;
-      this.enableTraceBasedSamplingForLogs =
-        options.enableTraceBasedSamplingForLogs !== undefined
-          ? options.enableTraceBasedSamplingForLogs
-          : this.enableTraceBasedSamplingForLogs;
-      this.enablePerformanceCounters =
-        options.enablePerformanceCounters !== undefined
-          ? options.enablePerformanceCounters
-          : this.enablePerformanceCounters;
+
+      // Azure Monitor-scoped options
+      if (azureMonitor) {
+        this.azureMonitorExporterOptions = Object.assign(
+          this.azureMonitorExporterOptions,
+          azureMonitor.azureMonitorExporterOptions,
+        );
+        this.browserSdkLoaderOptions = Object.assign(
+          this.browserSdkLoaderOptions,
+          azureMonitor.browserSdkLoaderOptions,
+        );
+        this.enableLiveMetrics =
+          azureMonitor.enableLiveMetrics !== undefined
+            ? azureMonitor.enableLiveMetrics
+            : this.enableLiveMetrics;
+        this.enableStandardMetrics =
+          azureMonitor.enableStandardMetrics !== undefined
+            ? azureMonitor.enableStandardMetrics
+            : this.enableStandardMetrics;
+        this.enableTraceBasedSamplingForLogs =
+          azureMonitor.enableTraceBasedSamplingForLogs !== undefined
+            ? azureMonitor.enableTraceBasedSamplingForLogs
+            : this.enableTraceBasedSamplingForLogs;
+        this.enablePerformanceCounters =
+          azureMonitor.enablePerformanceCounters !== undefined
+            ? azureMonitor.enablePerformanceCounters
+            : this.enablePerformanceCounters;
+      }
     }
     // JSON configuration will take precedence over options provided
     this._mergeJsonConfig();
