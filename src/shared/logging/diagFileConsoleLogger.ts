@@ -60,7 +60,7 @@ export class DiagFileConsoleLogger implements DiagLogger {
     if (this._logToFile) {
       if (!this._fileCleanupTimer) {
         this._fileCleanupTimer = setInterval(() => {
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+           
           this._fileCleanupTask();
         }, this._cleanupTimeOut);
         this._fileCleanupTimer.unref();
@@ -68,7 +68,7 @@ export class DiagFileConsoleLogger implements DiagLogger {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
+   
   public error(message?: any, ...args: any[]): void {
     if (this._shouldFilterResourceAttributeWarning(message, args)) {
       return;
@@ -76,11 +76,11 @@ export class DiagFileConsoleLogger implements DiagLogger {
     if (this._shouldFilterAzureMonitorExporterWarning(message)) {
       return;
     }
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+     
     this.logMessage(message, args);
   }
 
-  // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
+   
   public warn(message?: any, ...args: any[]): void {
     if (this._shouldFilterResourceAttributeWarning(message, args)) {
       return;
@@ -88,11 +88,11 @@ export class DiagFileConsoleLogger implements DiagLogger {
     if (this._shouldFilterAzureMonitorExporterWarning(message)) {
       return;
     }
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+     
     this.logMessage(message, args);
   }
 
-  // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
+   
   public info(message?: any, ...args: any[]): void {
     if (this._shouldFilterResourceAttributeWarning(message, args)) {
       return;
@@ -100,11 +100,11 @@ export class DiagFileConsoleLogger implements DiagLogger {
     if (this._shouldFilterAzureMonitorExporterWarning(message)) {
       return;
     }
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+     
     this.logMessage(message, args);
   }
 
-  // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
+   
   public debug(message?: any, ...args: any[]): void {
     if (this._shouldFilterResourceAttributeWarning(message, args)) {
       return;
@@ -112,11 +112,11 @@ export class DiagFileConsoleLogger implements DiagLogger {
     if (this._shouldFilterAzureMonitorExporterWarning(message)) {
       return;
     }
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+     
     this.logMessage(message, args);
   }
 
-  // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
+   
   public verbose(message?: any, ...args: any[]): void {
     if (this._shouldFilterResourceAttributeWarning(message, args)) {
       return;
@@ -124,11 +124,11 @@ export class DiagFileConsoleLogger implements DiagLogger {
     if (this._shouldFilterAzureMonitorExporterWarning(message)) {
       return;
     }
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+     
     this.logMessage(message, args);
   }
 
-  // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
+   
   public async logMessage(message?: any, ...optionalParams: any[]): Promise<void> {
     try {
       const args = message ? [message, ...optionalParams] : optionalParams;
@@ -136,11 +136,11 @@ export class DiagFileConsoleLogger implements DiagLogger {
         await this._storeToDisk(args);
       }
       if (this._logToConsole) {
-        // eslint-disable-next-line no-console
+         
         console.log(...args);
       }
     } catch (err: any) {
-      // eslint-disable-next-line no-console
+       
       console.log(this._TAG, `Failed to log to file: ${err && err.message}`);
     }
   }
@@ -213,18 +213,18 @@ export class DiagFileConsoleLogger implements DiagLogger {
     try {
       await confirmDirExists(this._tempDir);
     } catch (err: any) {
-      // eslint-disable-next-line no-console
+       
       console.log(this._TAG, `Failed to create directory for log file: ${err && err.message}`);
       return;
     }
     try {
       await accessAsync(this._fileFullPath, fs.constants.F_OK);
-    } catch (err: any) {
+    } catch (_err: any) {
       // No file create one
       try {
         await appendFileAsync(this._fileFullPath, data);
       } catch (appendError: any) {
-        // eslint-disable-next-line no-console
+         
         console.log(
           this._TAG,
           `Failed to put log into file: ${appendError && appendError.message}`,
@@ -247,7 +247,7 @@ export class DiagFileConsoleLogger implements DiagLogger {
       const backupPath = path.join(this._tempDir, `${new Date().getTime()}.${this._logFileName}`);
       await writeFileAsync(backupPath, buffer);
     } catch (err: any) {
-      // eslint-disable-next-line no-console
+       
       console.log("Failed to generate backup log file", err);
     } finally {
       // Store logs
@@ -277,7 +277,7 @@ export class DiagFileConsoleLogger implements DiagLogger {
         await unlinkAsync(pathToDelete);
       }
     } catch (err: any) {
-      // eslint-disable-next-line no-console
+       
       console.log(this._TAG, `Failed to cleanup log files: ${err && err.message}`);
     }
   }

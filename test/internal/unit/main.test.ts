@@ -271,7 +271,7 @@ describe("Main functions", () => {
       views: [customView],
     };
     useAzureMonitor(config);
-    // eslint-disable-next-line no-underscore-dangle
+     
     const meterConfig = (_getSdkInstance() as any)?._meterProviderConfig;
     expect(meterConfig).toBeDefined();
     expect(meterConfig?.views).toContain(customView);
@@ -523,7 +523,7 @@ describe("Main functions", () => {
     });
   });
 
-  // eslint-disable-next-line @typescript-eslint/no-misused-promises
+   
   it("should update statsbeat env var based on reading instrumentations array", () => {
     const config: AzureMonitorOpenTelemetryOptions = {
       azureMonitorExporterOptions: {
@@ -701,7 +701,7 @@ describe("Main functions", () => {
 
     if (sharedState && sharedState.metricCollectors) {
       // Extract metric readers from metricCollectors
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, no-underscore-dangle, @typescript-eslint/no-unsafe-return
+       
       metricReaders = sharedState.metricCollectors.map((collector: any) => collector._metricReader);
       foundProperty = "_sharedState.metricCollectors[].._metricReader";
     }
@@ -734,7 +734,7 @@ describe("Main functions", () => {
           // Verify the OTLP exporter has the correct URL configuration
           const delegate = exporter["_delegate"];
           if (delegate) {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, no-underscore-dangle, @typescript-eslint/no-unsafe-member-access
+             
             const transportParams = delegate._transport._transport._parameters;
             assert.strictEqual(
               transportParams.url,

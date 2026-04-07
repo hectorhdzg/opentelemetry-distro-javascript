@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-/* eslint-disable no-underscore-dangle*/
+ 
 
 import { trace, context, isValidTraceId, isValidSpanId } from "@opentelemetry/api";
 import type { LogRecord as APILogRecord } from "@opentelemetry/api-logs";

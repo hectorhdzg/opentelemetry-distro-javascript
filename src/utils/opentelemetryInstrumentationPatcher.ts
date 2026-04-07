@@ -34,13 +34,13 @@ export function patchOpenTelemetryInstrumentationEnable(): void {
           };
         }
         process.env[AZURE_MONITOR_STATSBEAT_FEATURES] = JSON.stringify(updatedStatsbeat);
-      } catch (e) {
+      } catch (_e) {
         Logger.getInstance().warn("Failed to parse the statsbeat environment variable");
       }
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-return, prefer-rest-params
+      // eslint-disable-next-line prefer-rest-params
       return originalModuleDefinition.apply(this, arguments);
     };
-  } catch (e) {
+  } catch (_e) {
     // Fail silently if the module is not found
   }
 }

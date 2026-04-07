@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-/* eslint-disable no-underscore-dangle*/
+ 
 
 import http from "node:http";
 import https from "node:https";
@@ -102,7 +102,7 @@ export class BrowserSdkLoader {
       if (originalRequestListener) {
         requestListener = (request: IncomingMessage, response: ServerResponse) => {
           // Patch response write method
-          // eslint-disable-next-line @typescript-eslint/unbound-method
+           
           const originalResponseWrite = response.write;
           const isGetRequest = request.method === "GET";
           // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
@@ -143,10 +143,10 @@ export class BrowserSdkLoader {
           };
 
           // Patch response end method for cases when HTML is added there
-          // eslint-disable-next-line @typescript-eslint/unbound-method
+           
           const originalResponseEnd = response.end;
 
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type, @typescript-eslint/no-redundant-type-constituents
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
           (response.end as any) = function wrap(a?: Buffer | string | any, b?: Function) {
             if (isGetRequest) {
               try {
@@ -197,7 +197,7 @@ export class BrowserSdkLoader {
           const isGetHttpsRequest = req.method === "GET";
           const originalHttpsResponseWrite = res.write;
           const originalHttpsResponseEnd = res.end;
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type, @typescript-eslint/no-redundant-type-constituents
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
           res.write = function wrap(a: Buffer | string | any, b?: Function | string) {
             try {
               if (isGetHttpsRequest) {
@@ -220,11 +220,11 @@ export class BrowserSdkLoader {
             } catch (err) {
               Logger.getInstance().warn(`Inject SDK loader error: ${err}`);
             }
-            // eslint-disable-next-line prefer-rest-params, @typescript-eslint/no-unsafe-return
+            // eslint-disable-next-line prefer-rest-params
             return originalHttpsResponseWrite.apply(res, arguments);
           };
 
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type, @typescript-eslint/no-redundant-type-constituents
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
           res.end = function wrap(a: Buffer | string | any, b?: Function | string) {
             try {
               if (isGetHttpsRequest) {
@@ -252,10 +252,10 @@ export class BrowserSdkLoader {
             } catch (err) {
               Logger.getInstance().warn(`Inject SDK loader error: ${err}`);
             }
-            // eslint-disable-next-line prefer-rest-params, @typescript-eslint/no-unsafe-return
+            // eslint-disable-next-line prefer-rest-params
             return originalHttpsResponseEnd.apply(res, arguments);
           };
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+           
           return originalHttpsRequestListener(req, res);
         };
         return originalHttpsServer(options, httpsRequestListener);
@@ -266,7 +266,7 @@ export class BrowserSdkLoader {
   /**
    * Validate response and try to inject Browser SDK Loader
    */
-  // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
+   
   public ValidateInjection(response: any, input: string | Buffer): boolean {
     try {
       if (!response || !input || response.statusCode !== 200) return false;
@@ -289,7 +289,7 @@ export class BrowserSdkLoader {
    * Inject Browser SDK Loader
    */
   public InjectSdkLoader(
-    // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
+     
     response: any,
     input: string | Buffer,
     encodeType?: browserSdkLoaderHelper.contentEncodingMethod,

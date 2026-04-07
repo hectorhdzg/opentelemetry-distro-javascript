@@ -35,7 +35,7 @@ import { RateLimitedSampler } from "@azure/monitor-opentelemetry-exporter";
 describe("Library/TraceHandler", () => {
   const connectionString = "InstrumentationKey=1aa11111-bbbb-1ccc-8ddd-eeeeffff3333";
   let http: typeof Http | null = null;
-  /* eslint-disable-next-line no-underscore-dangle */
+   
   let _config: InternalConfig;
   let handler: TraceHandler;
   let metricHandler: MetricHandler;
@@ -55,7 +55,7 @@ describe("Library/TraceHandler", () => {
   beforeAll(async () => {
     await new Promise((resolve) => {
       if (!http) {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
         http = require("http");
       }
       mockHttpServer = http?.createServer((req, res) => {
@@ -181,7 +181,7 @@ describe("Library/TraceHandler", () => {
     });
   });
 
-  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+   
   function createHandler(httpConfig: HttpInstrumentationConfig) {
     _config.instrumentationOptions.http = httpConfig;
     metricHandler = new MetricHandler(_config);
@@ -218,7 +218,7 @@ describe("Library/TraceHandler", () => {
     require("http");
   }
 
-  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+   
   async function makeHttpRequest() {
     const options = {
       hostname: "localhost",

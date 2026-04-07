@@ -184,7 +184,7 @@ export class LiveMetrics {
       credentialScopes:
         parsedConnectionString.aadaudience ||
         this.config.azureMonitorExporterOptions.credentialScopes,
-      // eslint-disable-next-line @typescript-eslint/no-misused-promises
+       
       postCallback: this.quickPulseDone.bind(this),
       getDocumentsFn: this.getDocuments.bind(this),
       getErrorsFn: this.getErrors.bind(this),
@@ -195,7 +195,7 @@ export class LiveMetrics {
     this.isCollectingData = false;
     this.pingInterval = PING_INTERVAL; // Default
     this.postInterval = POST_INTERVAL;
-    // eslint-disable-next-line @typescript-eslint/no-misused-promises
+     
     this.handle = <any>setTimeout(this.goQuickpulse.bind(this), this.pingInterval);
     this.handle.unref(); // Don't block apps from terminating
     this.lastCpuUsage = process.cpuUsage();
@@ -219,10 +219,10 @@ export class LiveMetrics {
           const response = await this.pingSender.isSubscribed(params);
           this.quickPulseDone(response);
         });
-      } catch (error) {
+      } catch (_error) {
         this.quickPulseDone(undefined);
       }
-      // eslint-disable-next-line @typescript-eslint/no-misused-promises
+       
       this.handle = <any>setTimeout(this.goQuickpulse.bind(this), this.pingInterval);
       this.handle.unref();
     }
@@ -231,7 +231,7 @@ export class LiveMetrics {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
+   
   private async quickPulseDone(response: QuickpulseResponse | undefined): Promise<void> {
     if (!response) {
       if (!this.isCollectingData) {
@@ -259,7 +259,7 @@ export class LiveMetrics {
       if (!this.isCollectingData && this.meterProvider) {
         this.etag = "";
         this.deactivateMetrics();
-        // eslint-disable-next-line @typescript-eslint/no-misused-promises
+         
         this.handle = <any>setTimeout(this.goQuickpulse.bind(this), this.pingInterval);
         this.handle.unref();
       }

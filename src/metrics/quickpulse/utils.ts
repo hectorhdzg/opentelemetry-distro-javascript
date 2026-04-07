@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-/* eslint-disable @typescript-eslint/no-unsafe-enum-comparison */
+ 
 
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import type { SdkLogRecord } from "@opentelemetry/sdk-logs";
@@ -104,7 +104,6 @@ export function getSdkVersionType(): string {
   }
 }
 
-// eslint-disable-next-line tsdoc/syntax
 /** Set the version prefix to a string in the format "{ResourceProvider}{OS}m_ */
 export function setSdkPrefix(): void {
   if (!process.env[AZURE_MONITOR_PREFIX]) {
@@ -332,7 +331,7 @@ function getDependencyData(span: ReadableSpan): DependencyData {
             target = res[1] + res[2] + res[4];
           }
         }
-      } catch (ex: any) {
+      } catch (_ex: any) {
         /* no-op */
       }
       dependencyData.Target = `${target}`;
@@ -395,15 +394,15 @@ export function getLogData(log: SdkLogRecord): ExceptionData | TraceData {
   const customDims = createCustomDimsFromAttributes(log.attributes);
   if (isExceptionTelemetry(log)) {
     return {
-      // eslint-disable-next-line @typescript-eslint/no-base-to-string
+       
       Message: String(log.attributes[SEMATTRS_EXCEPTION_MESSAGE]),
-      // eslint-disable-next-line @typescript-eslint/no-base-to-string
+       
       StackTrace: String(log.attributes[SEMATTRS_EXCEPTION_STACKTRACE]),
       CustomDimensions: customDims,
     };
   } else {
     return {
-      // eslint-disable-next-line @typescript-eslint/no-base-to-string
+       
       Message: String(log.body),
       CustomDimensions: customDims,
     };
@@ -484,7 +483,7 @@ function createCustomDimsFromAttributes(
           httpSemanticValues.includes(key as any)
         )
       ) {
-        // eslint-disable-next-line @typescript-eslint/no-base-to-string
+         
         customDims.set(key, String(attributes[key]));
       }
     }

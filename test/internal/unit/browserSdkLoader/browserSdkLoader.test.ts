@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-/* eslint-disable no-underscore-dangle*/
+ 
 
 import type http from "node:http";
 import { BrowserSdkLoader } from "../../../../src/browserSdkLoader/browserSdkLoader.js";
@@ -61,13 +61,13 @@ describe("#BrowserSdkLoader", () => {
     const browserSdkLoader = BrowserSdkLoader.getInstance();
 
     const _headers: any = {};
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+     
     const response: http.ServerResponse = <any>{
       setHeader: (header: string, value: string) => {
         _headers[header] = value;
       },
       getHeader: (header: string) => {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+         
         return _headers[header];
       },
     };
@@ -103,13 +103,13 @@ describe("#BrowserSdkLoader", () => {
 
     const _headers: any = {};
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+     
     const response: http.ServerResponse = <any>{
       setHeader: (header: string, value: string) => {
         _headers[header] = value;
       },
       getHeader: (header: string) => {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+         
         return _headers[header];
       },
       removeHeader: (header: string) => {
@@ -145,13 +145,13 @@ describe("#BrowserSdkLoader", () => {
     useAzureMonitor(config);
     const browserSdkLoader = BrowserSdkLoader.getInstance();
     const _headers: any = {};
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+     
     const response: http.ServerResponse = <any>{
       setHeader: (header: string, value: string) => {
         _headers[header] = value;
       },
       getHeader: (header: string) => {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+         
         return _headers[header];
       },
       removeHeader: (header: string) => {
@@ -180,13 +180,13 @@ describe("#BrowserSdkLoader", () => {
     const browserSdkLoader = BrowserSdkLoader.getInstance();
 
     const _headers: any = {};
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+     
     const response: http.ServerResponse = <any>{
       setHeader: (header: string, value: string) => {
         _headers[header] = value;
       },
       getHeader: (header: string) => {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+         
         return _headers[header];
       },
       removeHeader: (header: string) => {
@@ -224,13 +224,13 @@ describe("#BrowserSdkLoader", () => {
     const browserSdkLoader = BrowserSdkLoader.getInstance();
 
     const _headers: any = {};
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+     
     const response: http.ServerResponse = <any>{
       setHeader: (header: string, value: string) => {
         _headers[header] = value;
       },
       getHeader: (header: string) => {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+         
         return _headers[header];
       },
       removeHeader: (header: string) => {
@@ -268,13 +268,13 @@ describe("#BrowserSdkLoader", () => {
     const browserSdkLoader = BrowserSdkLoader.getInstance();
 
     const _headers: any = {};
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+     
     const response: http.ServerResponse = <any>{
       setHeader: (header: string, value: string) => {
         _headers[header] = value;
       },
       getHeader: (header: string) => {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+         
         return _headers[header];
       },
       removeHeader: (header: string) => {
@@ -312,13 +312,13 @@ describe("#BrowserSdkLoader", () => {
 
     assert.equal(browserSdkLoader["_isIkeyValid"], true, "ikey should be set to valid");
     const _headers: any = {};
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+     
     const response: http.ServerResponse = <any>{
       setHeader: (header: string, value: string) => {
         _headers[header] = value;
       },
       getHeader: (header: string) => {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+         
         return _headers[header];
       },
       removeHeader: (header: string) => {

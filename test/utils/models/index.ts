@@ -249,7 +249,6 @@ export interface RemoteDependencyData extends MonitorDomain {
 export interface RequestData extends MonitorDomain {
   /** Identifier of a request call instance. Used for correlation between request and other telemetry items. */
   id: string;
-  // eslint-disable-next-line tsdoc/syntax
   /** Name of the request. Represents code path taken to process request. Low cardinality value to allow better grouping of requests. For HTTP requests it represents the HTTP method and URL path template like 'GET /values/{id}'. */
   name?: string;
   /** Request duration in format: DD.HH:MM:SS.MMMMMM. Must be less than 1000 days. */

@@ -87,7 +87,7 @@ export class Logger {
     };
   }
 
-  // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
+   
   public error(message?: any, ...args: any[]): void {
     if (this.logToAzureLogger) {
       this.azureLogger.error(message, args);
@@ -97,7 +97,7 @@ export class Logger {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
+   
   public warn(message?: any, ...args: any[]): void {
     if (this.logToAzureLogger) {
       this.azureLogger.warning(message, args);
@@ -107,7 +107,7 @@ export class Logger {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
+   
   public info(message?: any, ...args: any[]): void {
     if (this.logToAzureLogger) {
       this.azureLogger.info(message, args);
@@ -117,7 +117,7 @@ export class Logger {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
+   
   public debug(message?: any, ...args: any[]): void {
     if (this.logToAzureLogger) {
       this.azureLogger.verbose(message, args);
@@ -127,7 +127,7 @@ export class Logger {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
+   
   public verbose(message?: any, ...args: any[]): void {
     if (this.logToAzureLogger) {
       this.azureLogger.verbose(message, args);

@@ -292,7 +292,7 @@ describe("MetricHandler", () => {
       const metricReader = metricHandler.getMetricReader();
 
       // Access the private _exportInterval property to verify it was set correctly
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, no-underscore-dangle
+       
       const exportInterval = (metricReader as any)._exportInterval;
       assert.strictEqual(
         exportInterval,
@@ -316,7 +316,7 @@ describe("MetricHandler", () => {
       const metricReader = metricHandler.getMetricReader();
 
       // Should use default interval when env var is invalid
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, no-underscore-dangle
+       
       const exportInterval = (metricReader as any)._exportInterval;
       assert.strictEqual(
         exportInterval,
@@ -340,7 +340,7 @@ describe("MetricHandler", () => {
       const metricReader = metricHandler.getMetricReader();
 
       // Should use default since negative values are invalid
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, no-underscore-dangle
+       
       const exportInterval = (metricReader as any)._exportInterval;
       assert.strictEqual(
         exportInterval,
@@ -364,7 +364,7 @@ describe("MetricHandler", () => {
       const metricReader = metricHandler.getMetricReader();
 
       // Should use default since zero is invalid
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, no-underscore-dangle
+       
       const exportInterval = (metricReader as any)._exportInterval;
       assert.strictEqual(
         exportInterval,
@@ -388,7 +388,7 @@ describe("MetricHandler", () => {
       const metricReader = metricHandler.getMetricReader();
 
       // Should use default when env var is not set
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, no-underscore-dangle
+       
       const exportInterval = (metricReader as any)._exportInterval;
       assert.strictEqual(
         exportInterval,
@@ -407,7 +407,7 @@ describe("MetricHandler", () => {
       const metricReader = metricHandler.getMetricReader();
 
       // Should use the default _collectionInterval (60000ms)
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, no-underscore-dangle
+       
       const exportInterval = (metricReader as any)._exportInterval;
       assert.strictEqual(
         exportInterval,
@@ -433,7 +433,7 @@ describe("MetricHandler", () => {
       const metricReader = metricHandler.getMetricReader();
 
       // Should use environment variable over default
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, no-underscore-dangle
+       
       const exportInterval = (metricReader as any)._exportInterval;
       assert.strictEqual(
         exportInterval,
@@ -459,7 +459,7 @@ describe("MetricHandler", () => {
       const metricReader = metricHandler.getMetricReader();
 
       // parseInt should handle whitespace correctly
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, no-underscore-dangle
+       
       const exportInterval = (metricReader as any)._exportInterval;
       assert.strictEqual(
         exportInterval,
@@ -485,7 +485,7 @@ describe("MetricHandler", () => {
       const metricReader = metricHandler.getMetricReader();
 
       // parseInt should truncate decimal values
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, no-underscore-dangle
+       
       const exportInterval = (metricReader as any)._exportInterval;
       assert.strictEqual(
         exportInterval,

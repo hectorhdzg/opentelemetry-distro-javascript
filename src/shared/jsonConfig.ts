@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-/* eslint-disable no-underscore-dangle*/
+ 
 
 import fs from "node:fs";
 import path from "node:path";
