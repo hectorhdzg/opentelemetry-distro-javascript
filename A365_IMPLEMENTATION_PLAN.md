@@ -152,26 +152,21 @@ export interface MicrosoftOpenTelemetryOptions {
 export interface A365Options {
   enabled?: boolean;
   tokenResolver?: (agentId: string, tenantId: string) => string | Promise<string>;
-  clusterCategory?: 'prod' | 'preprod';
+  clusterCategory?: ClusterCategory;
   domainOverride?: string;
   authScopes?: string[];
   perRequestExport?: boolean;
-  exporterOptions?: Partial<Agent365ExporterOptions>;
-  logLevel?: 'none' | 'error' | 'warn' | 'info' | 'debug' | 'verbose';
   baggage?: {
     propagationEnabled?: boolean;        // Enable baggage propagation middleware
     enrichSpans?: boolean;               // Copy baggage items to span attributes
-  };
-  instrumentations?: {
-    openaiAgents?: boolean | OpenAIObservabilityConfiguration;
-    langchain?: boolean | LangChainObservabilityConfiguration;
-    microsoftAgentFramework?: boolean;   // Microsoft Agent Framework instrumentation
   };
   hosting?: {
     enabled?: boolean;                   // Enable hosting middleware (requires @microsoft/agents-hosting)
   };
 }
 ```
+
+Instrumentation options for GenAI and agent frameworks (OpenAI Agents, LangChain, Microsoft Agent Framework) are configured at the distro level via `instrumentationOptions` in `MicrosoftOpenTelemetryOptions`, not under `a365`.
 
 **Depends on:** Phase 2 configuration surface (now complete — `MicrosoftOpenTelemetryOptions` with backend scoping is established in `src/distro/types.ts`)
 
@@ -271,12 +266,12 @@ export interface A365Options {
 
 ### Task 6: Migrate OpenAI Agents Instrumentation
 
-**Source:** `agents-a365-observability-extensions-_openai/src/`
+**Source:** `agents-a365-observability-extensions-openai/src/`
 
 **Work:**
 - Per PLANNING.md Phase 5, GenAI instrumentations go into clearly marked internal modules
 - Copy into `src/_openai/` (separate from `_a365/` per PLANNING.md convention):
-  - `OpenAIAgentsTraceInstrumentor.ts` — extends `InstrumentationBase`, targets `@_openai/agents >= 0.1.5`
+  - `OpenAIAgentsTraceInstrumentor.ts` — extends `InstrumentationBase`, targets `@openai/agents >= 0.1.5`
   - `OpenAIAgentsTraceProcessor.ts` — implements OpenAI's `TracingProcessor` interface
   - `Constants.ts` — OpenAI-specific constants
   - `Utils.ts` — OpenAI utilities
@@ -287,8 +282,8 @@ export interface A365Options {
   - Maps OpenAI agent events to A365 scope types (InvokeAgent, ExecuteTool, Inference, Output)
 - **Adaptation:** Replace `@microsoft/agents-a365-observability` imports with `../_a365/` imports
 - **Adaptation:** Replace `@microsoft/agents-a365-runtime` imports with distro config
-- **Dependency:** `@_openai/agents` as optional peer dependency
-- Wire into distro config: `a365.instrumentations.openaiAgents`
+- **Dependency:** `@openai/agents` as optional peer dependency
+- Wire into distro config: `instrumentationOptions.openaiAgents`
 
 **Depends on:** Task 4 (scopes/contracts)
 
@@ -296,7 +291,7 @@ export interface A365Options {
 
 ### Task 7: Migrate LangChain Instrumentation
 
-**Source:** `agents-a365-observability-extensions-_langchain/src/`
+**Source:** `agents-a365-observability-extensions-langchain/src/`
 
 **Work:**
 - Copy into `src/_langchain/` (separate from `_a365/` per PLANNING.md convention):
@@ -304,14 +299,14 @@ export interface A365Options {
   - `tracer.ts` — `LangChainTracer` implementing LangChain callback handler
   - `Utils.ts` — LangChain utilities
 - Key behavior:
-  - Patches `@_langchain/core/callbacks/manager.CallbackManager._configureSync()`
+  - Patches `@langchain/core/callbacks/manager.CallbackManager._configureSync()`
   - Injects `LangChainTracer` into callback handlers
   - Listens to `on_chain_start`, `on_chain_end`, `on_tool_start`, etc.
   - Creates/manages spans for chain invocations and tool calls
   - Config: `isContentRecordingEnabled`
 - **Adaptation:** Replace `@microsoft/agents-a365-observability` imports with `../_a365/` imports
-- **Dependency:** `@_langchain/core` as optional peer dependency
-- Wire into distro config: `a365.instrumentations.langchain`
+- **Dependency:** `@langchain/core` as optional peer dependency
+- Wire into distro config: `instrumentationOptions.langchain`
 
 **Depends on:** Task 4 (scopes/contracts)
 
@@ -349,11 +344,11 @@ export interface A365Options {
   - `_a365/context/` — verify context propagation, token storage/retrieval
   - `_a365/configuration/` — verify env var parsing, defaults, validation
   - `_a365/instrumentations/` — verify Microsoft Agent Framework instrumentation lifecycle
-  - `_openai/` — mock `@_openai/agents`, verify trace processor registration
-  - `_langchain/` — mock `@_langchain/core`, verify callback patching
+  - `_openai/` — mock `@openai/agents`, verify trace processor registration
+  - `_langchain/` — mock `@langchain/core`, verify callback patching
   - `a365Setup.ts` — integration test for full A365 setup flow
 - Use Vitest (confirmed — already configured in `vitest.config.ts` with tests under `test/`)
-- Tests for missing optional peer dependencies (graceful failures when `@_openai/agents`, `@_langchain/core`, or `@microsoft/agents-hosting` not installed)
+- Tests for missing optional peer dependencies (graceful failures when `@openai/agents`, `@langchain/core`, or `@microsoft/agents-hosting` not installed)
 - Tests for disabled A365 scenario (no processors registered, no exporter created)
 - **Telemetry pipeline validation** (per PLANNING.md Phase 6): Validate that existing A365 telemetry pipelines continue to work under the new distro setup with the in-repo code:
   - Verify span attribute fidelity: spans produced by the migrated code must have identical attributes, naming, and structure to those produced by the standalone `Agent365-nodejs` packages
