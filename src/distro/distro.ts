@@ -33,7 +33,7 @@ let disposeAzureMonitor: (() => void) | undefined;
  * This is the primary entry point for the distro. It sets up OpenTelemetry
  * providers and instrumentations, then attaches the configured exporters:
  * - Azure Monitor (when `options.azureMonitor` is provided)
- * - OTLP HTTP (when `options.otlp` is provided or `OTEL_EXPORTER_OTLP_ENDPOINT` is set)
+ * - OTLP HTTP (when `OTEL_EXPORTER_OTLP_ENDPOINT` is set)
  * - A365 (future)
  *
  * @param options - Microsoft OpenTelemetry configuration options
@@ -73,9 +73,10 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
   const resourceDetectorsList = parseResourceDetectorsFromEnvVar();
 
   // ── Merge user-provided processors / readers / views ──────────────
-  const spanProcessors: SpanProcessor[] = options?.spanProcessors || [];
-  const logRecordProcessors: LogRecordProcessor[] = options?.logRecordProcessors || [];
-  const customViews: ViewOptions[] = options?.views || [];
+  // Clone caller-provided arrays to avoid mutating them when OTLP components are appended.
+  const spanProcessors: SpanProcessor[] = [...(options?.spanProcessors || [])];
+  const logRecordProcessors: LogRecordProcessor[] = [...(options?.logRecordProcessors || [])];
+  const customViews: ViewOptions[] = [...(options?.views || [])];
 
   // Always include Azure Monitor metric reader
   const metricReaders: MetricReader[] = [

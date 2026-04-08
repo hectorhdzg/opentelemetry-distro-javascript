@@ -13,14 +13,24 @@ import type { LogRecordProcessor } from "@opentelemetry/sdk-logs";
 import { Logger } from "../shared/logging/index.js";
 
 const OTEL_EXPORTER_OTLP_ENDPOINT = "OTEL_EXPORTER_OTLP_ENDPOINT";
+const OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT";
+const OTEL_EXPORTER_OTLP_METRICS_ENDPOINT = "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT";
+const OTEL_EXPORTER_OTLP_LOGS_ENDPOINT = "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT";
 
 /**
  * Determines whether OTLP export should be enabled.
  *
- * OTLP is enabled when the `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable is set.
+ * OTLP is enabled when any supported OTLP endpoint environment variable is set:
+ * `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`,
+ * `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, or `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`.
  */
 export function isOtlpEnabled(): boolean {
-  return !!process.env[OTEL_EXPORTER_OTLP_ENDPOINT];
+  return [
+    OTEL_EXPORTER_OTLP_ENDPOINT,
+    OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,
+    OTEL_EXPORTER_OTLP_METRICS_ENDPOINT,
+    OTEL_EXPORTER_OTLP_LOGS_ENDPOINT,
+  ].some((envVar) => !!process.env[envVar]);
 }
 
 export interface OtlpComponents {
