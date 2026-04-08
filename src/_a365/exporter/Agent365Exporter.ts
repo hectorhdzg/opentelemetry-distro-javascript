@@ -5,7 +5,7 @@ import type { ExportResult } from "@opentelemetry/core";
 import { ExportResultCode } from "@opentelemetry/core";
 import type { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace-base";
 
-import type { Agent365ExporterOptions, TokenResolver } from "./Agent365ExporterOptions.js";
+import type { Agent365ExporterOptions } from "./Agent365ExporterOptions.js";
 import { ResolvedExporterOptions } from "./Agent365ExporterOptions.js";
 import {
   partitionByIdentity,
