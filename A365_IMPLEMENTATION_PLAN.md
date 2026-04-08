@@ -8,7 +8,7 @@ This plan covers both **Phase 5 (GenAI Instrumentations)** and **Phase 6 (A365 C
 
 Phases 1–4 are now substantially complete:
 - ~~**Phase 1 (Package Foundation):** Published as `@microsoft/opentelemetry`, with ESLint, Vitest, and CI configured.~~
-- **Phase 2 (Configuration Surface):** `MicrosoftOpenTelemetryOptions` is defined in `src/distro/types.ts` with a backend-scoped pattern (`azureMonitor?: AzureMonitorOpenTelemetryOptions`). The A365 scope (`a365?: A365Options`) follows this established pattern. Per PLANNING.md, A365-scoped configuration includes: A365 exporter endpoint, baggage extensions, Microsoft Agent Framework instrumentation toggles, and A365-specific span processors.
+- **Phase 2 (Configuration Surface):** `MicrosoftOpenTelemetryOptions` is defined in `src/distro/types.ts` with a backend-scoped pattern (`azureMonitor?: AzureMonitorOpenTelemetryOptions`). The A365 scope (`a365?: A365Options`) follows this established pattern. Per PLANNING.md, A365-scoped configuration includes: A365 exporter endpoint, baggage extensions, and A365-specific span processors.
 - **Phase 3 (Azure Monitor Migration):** Azure Monitor distro code has been fully migrated in-repo under `src/` (traces, metrics, logs, browser SDK loader, statsbeat, etc.).
 - **Phase 4 (Core OTel Setup):** `useMicrosoftOpenTelemetry()` in `src/distro/distro.ts` orchestrates NodeSDK creation with Azure Monitor handlers. The entry point has explicit `// TODO` placeholders for OTLP and A365 integration.
 
@@ -83,9 +83,6 @@ src/
 │   │   ├── OutputLoggingMiddleware.ts
 │   │   ├── ObservabilityHostingManager.ts
 │   │   └── AgenticTokenCache.ts
-│   │
-│   ├── instrumentations/
-│   │   └── MicrosoftAgentFrameworkInstrumentation.ts  # Microsoft Agent Framework instrumentation
 │   │
 │   └── utils/
 │       ├── baggageBuilder.ts
@@ -166,7 +163,7 @@ export interface A365Options {
 }
 ```
 
-Instrumentation options for GenAI and agent frameworks (OpenAI Agents, LangChain, Microsoft Agent Framework) are configured at the distro level via `instrumentationOptions` in `MicrosoftOpenTelemetryOptions`, not under `a365`.
+Instrumentation options for GenAI frameworks (OpenAI Agents, LangChain) are configured at the distro level via `instrumentationOptions` in `MicrosoftOpenTelemetryOptions`, not under `a365`.
 
 **Depends on:** Phase 2 configuration surface (now complete — `MicrosoftOpenTelemetryOptions` with backend scoping is established in `src/distro/types.ts`)
 
@@ -343,7 +340,6 @@ Instrumentation options for GenAI and agent frameworks (OpenAI Agents, LangChain
   - `_a365/scopes/` — verify span attributes, lifecycle, disposable pattern
   - `_a365/context/` — verify context propagation, token storage/retrieval
   - `_a365/configuration/` — verify env var parsing, defaults, validation
-  - `_a365/instrumentations/` — verify Microsoft Agent Framework instrumentation lifecycle
   - `_openai/` — mock `@openai/agents`, verify trace processor registration
   - `_langchain/` — mock `@langchain/core`, verify callback patching
   - `a365Setup.ts` — integration test for full A365 setup flow

@@ -65,12 +65,6 @@ export interface InstrumentationOptions {
    * Requires `@langchain/core` as an optional peer dependency.
    */
   langchain?: boolean | LangChainInstrumentationConfig;
-
-  /**
-   * Microsoft Agent Framework instrumentation.
-   * Requires `@microsoft/agents-hosting` as an optional peer dependency.
-   */
-  microsoftAgentFramework?: boolean;
 }
 
 /** Configuration for OpenAI Agents SDK instrumentation. */
