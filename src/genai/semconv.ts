@@ -49,3 +49,4 @@ export const ATTR_GEN_AI_TOOL_TYPE = "gen_ai.tool.type" as const;
 
 // Microsoft-specific (not in OTel semconv)
 export const ATTR_MICROSOFT_SESSION_ID = "microsoft.session.id" as const;
+export const ATTR_MICROSOFT_TENANT_ID = "microsoft.tenant.id" as const;

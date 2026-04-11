@@ -20,8 +20,8 @@ export type {
 } from "./distro/index.js";
 
 // ── Re-exports from A365 configuration ──────────────────────────────────────
-export { A365Configuration } from "./_a365/index.js";
-export type { ClusterCategory, A365BaggageOptions, A365HostingOptions } from "./_a365/index.js";
+export { A365Configuration } from "./a365/index.js";
+export type { ClusterCategory, A365BaggageOptions, A365HostingOptions } from "./a365/index.js";
 
 // ── Re-exports from types ───────────────────────────────────────────────────
 export type { OpenAIAgentsInstrumentationConfig, LangChainInstrumentationConfig } from "./types.js";

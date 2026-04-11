@@ -5,7 +5,7 @@ import { afterEach, assert, beforeEach, describe, it, vi } from "vitest";
 import { ExportResultCode } from "@opentelemetry/core";
 import { SpanKind, SpanStatusCode, TraceFlags } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
-import { Agent365Exporter } from "../../../../src/_a365/exporter/Agent365Exporter.js";
+import { Agent365Exporter } from "../../../../src/a365/exporter/Agent365Exporter.js";
 import {
   partitionByIdentity,
   parseIdentityKey,
@@ -16,8 +16,8 @@ import {
   resolveAgent365Endpoint,
   truncateSpan,
   MAX_SPAN_SIZE_BYTES,
-} from "../../../../src/_a365/exporter/utils.js";
-import { ResolvedExporterOptions } from "../../../../src/_a365/exporter/Agent365ExporterOptions.js";
+} from "../../../../src/a365/exporter/utils.js";
+import { ResolvedExporterOptions } from "../../../../src/a365/exporter/Agent365ExporterOptions.js";
 
 function makeSpan(overrides: Partial<ReadableSpan> = {}): ReadableSpan {
   return {

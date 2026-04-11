@@ -10,7 +10,7 @@ import type {
   InstrumentationOptions,
   BrowserSdkLoaderOptions,
 } from "../types.js";
-import type { A365Options } from "../_a365/index.js";
+import type { A365Options } from "../a365/index.js";
 
 export type { InstrumentationOptions, BrowserSdkLoaderOptions, A365Options };
 

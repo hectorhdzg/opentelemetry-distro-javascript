@@ -5,7 +5,7 @@ import { afterEach, assert, beforeEach, describe, it, vi } from "vitest";
 import {
   A365Configuration,
   A365_ENV_VARS,
-} from "../../../../src/_a365/configuration/A365Configuration.js";
+} from "../../../../src/a365/configuration/A365Configuration.js";
 import { JsonConfig } from "../../../../src/shared/jsonConfig.js";
 
 describe("A365Configuration", () => {

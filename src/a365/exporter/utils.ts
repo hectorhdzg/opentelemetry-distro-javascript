@@ -6,15 +6,15 @@ import { SpanKind, SpanStatusCode } from "@opentelemetry/api";
 import type { ClusterCategory } from "../configuration/A365ConfigurationOptions.js";
 import { Logger } from "../../shared/logging/index.js";
 import { ExporterEventNames } from "./ExporterEventNames.js";
-
-// Attribute keys for identity partitioning (from Agent365 OpenTelemetryConstants)
-const TENANT_ID_KEY = "microsoft.tenant.id";
-const GEN_AI_AGENT_ID_KEY = "gen_ai.agent.id";
+import {
+  ATTR_GEN_AI_AGENT_ID,
+  ATTR_GEN_AI_INPUT_MESSAGES,
+  ATTR_GEN_AI_OUTPUT_MESSAGES,
+  ATTR_MICROSOFT_TENANT_ID,
+} from "../../genai/semconv.js";
 
 // Message attribute keys that receive special truncation handling
-const GEN_AI_INPUT_MESSAGES_KEY = "gen_ai.input.messages";
-const GEN_AI_OUTPUT_MESSAGES_KEY = "gen_ai.output.messages";
-const MESSAGE_ATTR_KEYS = new Set([GEN_AI_INPUT_MESSAGES_KEY, GEN_AI_OUTPUT_MESSAGES_KEY]);
+const MESSAGE_ATTR_KEYS: Set<string> = new Set([ATTR_GEN_AI_INPUT_MESSAGES, ATTR_GEN_AI_OUTPUT_MESSAGES]);
 
 // A365 message schema version used in overflow sentinels
 const A365_MESSAGE_SCHEMA_VERSION = "1.0";
@@ -30,8 +30,8 @@ export function partitionByIdentity(spans: ReadableSpan[]): Map<string, Readable
 
   for (const span of spans) {
     const attrs = span.attributes || {};
-    const tenant = asStr(attrs[TENANT_ID_KEY]);
-    const agent = asStr(attrs[GEN_AI_AGENT_ID_KEY]);
+    const tenant = asStr(attrs[ATTR_MICROSOFT_TENANT_ID]);
+    const agent = asStr(attrs[ATTR_GEN_AI_AGENT_ID]);
 
     if (!tenant || !agent) {
       skippedCount++;
