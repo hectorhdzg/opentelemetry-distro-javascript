@@ -8,9 +8,9 @@ import type {
   BrowserSdkLoaderOptions,
   InstrumentationOptions,
 } from "../types.js";
-import type { A365Options } from "../_a365/index.js";
+import type { A365Options } from "../a365/index.js";
 import type { AzureMonitorExporterOptions } from "@azure/monitor-opentelemetry-exporter";
-import type { MicrosoftOpenTelemetryOptions } from "../distro/types.js";
+import type { MicrosoftOpenTelemetryOptions } from "../types.js";
 import { Logger } from "./logging/index.js";
 import { dirName } from "./module.js";
 

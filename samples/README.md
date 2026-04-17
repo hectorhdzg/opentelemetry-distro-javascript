@@ -24,6 +24,7 @@ These sample programs show how to use the `@microsoft/opentelemetry` distributio
 | [sampling.ts][sampling]                     | Demonstrates how to enable sampling to reduce data ingestion volume and control costs.                   |
 | [langchainInstrumentation.ts][langchaininstrumentation] | Demonstrates how to enable LangChain instrumentation to trace GenAI operations.                     |
 | [openaiInstrumentation.ts][openaiinstrumentation]       | Demonstrates how to enable OpenAI Agents SDK instrumentation to trace GenAI operations.             |
+| [a365Export.ts][a365export]                 | Demonstrates how to enable A365 observability export alongside Azure Monitor.                            |
 
 ## Prerequisites
 
@@ -74,3 +75,5 @@ APPLICATIONINSIGHTS_CONNECTION_STRING="<your connection string>" node dist/basic
 [sampling]: https://github.com/Azure/opentelemetry-distro-javascript/blob/main/samples/src/sampling.ts
 [langchaininstrumentation]: https://github.com/Azure/opentelemetry-distro-javascript/blob/main/samples/src/langchainInstrumentation.ts
 [openaiinstrumentation]: https://github.com/Azure/opentelemetry-distro-javascript/blob/main/samples/src/openaiInstrumentation.ts
+[a365export]: https://github.com/Azure/opentelemetry-distro-javascript/blob/main/samples/src/a365Export.ts
+

@@ -5,14 +5,14 @@
 // separate truncation mechanisms vendored from A365:
 //   1. truncateValue() here — 8,192 char limit on individual span attribute values,
 //      used by GenAI instrumentations (LangChain, OpenAI) before setting attributes.
-//   2. truncateSpan() in _a365/exporter/utils.ts — 250KB limit on entire serialized
+//   2. truncateSpan() in a365/exporter/utils.ts — 250KB limit on entire serialized
 //      spans, used by Agent365Exporter before posting to the A365 service.
 // These serve different purposes (attribute-level vs span-level) and target
 // different exporter backends. Need to determine:
 //   - What truncation Azure Monitor exporter expects/handles natively
 //   - What truncation OTLP exporter expects/handles natively
 //   - Whether attribute-level truncation should live in a shared location or
-//     remain exporter-specific under _a365/
+//     remain exporter-specific under a365/
 // For now, keeping this here since GenAI instrumentations need it regardless
 // of which exporter is active.
 
