@@ -56,6 +56,27 @@ Set `OTEL_EXPORTER_OTLP_ENDPOINT` and OTLP export is enabled automatically — n
 
 See the [OpenTelemetry OTLP Exporter specification](https://opentelemetry.io/docs/specs/otel/protocol/exporter/) for the full list.
 
+### `a365` options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | `boolean` | `false` | Enable A365 observability export |
+| `tokenResolver` | `(agentId, tenantId) => string \| Promise<string>` | — | Token resolver for A365 service authentication |
+| `clusterCategory` | `ClusterCategory` | `"prod"` | Cluster category for endpoint resolution (`local`, `dev`, `test`, `preprod`, `firstrelease`, `prod`, `gov`, `high`, `dod`, `mooncake`, `ex`, `rx`) |
+| `domainOverride` | `string` | — | Override the A365 observability service domain |
+| `authScopes` | `string[]` | `["https://api.powerplatform.com/.default"]` | OAuth scopes for A365 service authentication |
+| `perRequestExport` | `boolean` | `false` | Buffer spans per trace and export on root completion instead of batch export |
+
+A365 options can also be set via environment variables (highest precedence):
+
+| Environment Variable | Description |
+|---|---|
+| `MICROSOFT_OTEL_A365_EXPORTER_ENABLED` | `"true"` / `"false"` — override `enabled` |
+| `MICROSOFT_OTEL_A365_PER_REQUEST_EXPORT` | `"true"` / `"false"` — override `perRequestExport` |
+| `MICROSOFT_OTEL_A365_AUTH_SCOPES` | Comma-separated list of OAuth scopes |
+| `MICROSOFT_OTEL_A365_DOMAIN` | Override service domain |
+| `MICROSOFT_OTEL_A365_CLUSTER_CATEGORY` | Override cluster category |
+
 ### Example
 
 ```typescript

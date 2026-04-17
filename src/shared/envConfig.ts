@@ -8,7 +8,7 @@ import {
   ParentBasedSampler,
   TraceIdRatioBasedSampler,
 } from "@opentelemetry/sdk-trace-base";
-import type { MicrosoftOpenTelemetryOptions } from "../distro/types.js";
+import type { MicrosoftOpenTelemetryOptions } from "../types.js";
 import { Logger } from "./logging/index.js";
 const TRACES_SAMPLER = "OTEL_TRACES_SAMPLER";
 const TRACES_SAMPLER_ARG = "OTEL_TRACES_SAMPLER_ARG";

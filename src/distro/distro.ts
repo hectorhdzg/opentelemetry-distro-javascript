@@ -7,6 +7,7 @@ import type { NodeSDKConfiguration } from "@opentelemetry/sdk-node";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import type { MetricReader, ViewOptions } from "@opentelemetry/sdk-metrics";
 import type { SpanProcessor } from "@opentelemetry/sdk-trace-base";
+import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import type { LogRecordProcessor } from "@opentelemetry/sdk-logs";
 
 import { InternalConfig } from "../shared/config.js";
@@ -18,8 +19,9 @@ import { patchOpenTelemetryInstrumentationEnable } from "../utils/opentelemetryI
 import { parseResourceDetectorsFromEnvVar } from "../utils/common.js";
 import { setupAzureMonitorComponents } from "../azureMonitorSetup.js";
 import { isOtlpEnabled, createOtlpComponents } from "../otlp/index.js";
-import type { MicrosoftOpenTelemetryOptions } from "./types.js";
-import { MICROSOFT_OPENTELEMETRY_VERSION } from "./types.js";
+import { A365Configuration, Agent365Exporter } from "../a365/index.js";
+import type { MicrosoftOpenTelemetryOptions } from "../types.js";
+import { MICROSOFT_OPENTELEMETRY_VERSION } from "../types.js";
 
 process.env["AZURE_MONITOR_DISTRO_VERSION"] = AZURE_MONITOR_OPENTELEMETRY_VERSION;
 process.env["MICROSOFT_OPENTELEMETRY_VERSION"] = MICROSOFT_OPENTELEMETRY_VERSION;
@@ -34,7 +36,7 @@ let disposeAzureMonitor: (() => void) | undefined;
  * providers and instrumentations, then attaches the configured exporters:
  * - Azure Monitor (when `options.azureMonitor` is provided)
  * - OTLP HTTP (when `OTEL_EXPORTER_OTLP_ENDPOINT` is set)
- * - A365 (future)
+ * - A365 (when `options.a365.enabled` is true or `MICROSOFT_OTEL_A365_EXPORTER_ENABLED=true`)
  *
  * @param options - Microsoft OpenTelemetry configuration options
  */
@@ -96,6 +98,17 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
     if (otlp.logRecordProcessor) {
       logRecordProcessors.push(otlp.logRecordProcessor);
     }
+  }
+
+  // ── A365 exporter (enabled via options.a365 or env vars) ──────────
+  const a365Config = new A365Configuration(options?.a365);
+  if (a365Config.enabled) {
+    const a365Exporter = new Agent365Exporter({
+      clusterCategory: a365Config.clusterCategory,
+      domainOverride: a365Config.domainOverride,
+      tokenResolver: a365Config.tokenResolver,
+    });
+    spanProcessors.push(new BatchSpanProcessor(a365Exporter));
   }
 
   const views: ViewOptions[] = metricHandler.getViews().concat(customViews);

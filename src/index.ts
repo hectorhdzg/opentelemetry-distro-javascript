@@ -1,8 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import type { AzureMonitorOpenTelemetryOptions } from "./types.js";
-import type { MicrosoftOpenTelemetryOptions } from "./distro/types.js";
+import type { AzureMonitorOpenTelemetryOptions, MicrosoftOpenTelemetryOptions } from "./types.js";
 import { useMicrosoftOpenTelemetry, shutdownMicrosoftOpenTelemetry } from "./distro/distro.js";
 
 // ── Re-exports from distro ──────────────────────────────────────────────────
