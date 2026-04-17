@@ -3,7 +3,8 @@
 ## [0.1.0-alpha.2] - Unreleased
 
 ### Features Added
-- Add A365 Exporter. ([#15](https://github.com/microsoft/opentelemetry-distro-javascript/pull/15))
+- Add A365 Exporter. ([#20](https://github.com/microsoft/opentelemetry-distro-javascript/pull/20))
+- Add OpenAI Agents SDK instrumentation. ([#14](https://github.com/microsoft/opentelemetry-distro-javascript/pull/14))
 
 ## [0.1.0-alpha.1] - 2026-04-10
 
