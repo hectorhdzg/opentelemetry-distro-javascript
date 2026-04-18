@@ -3,7 +3,6 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { context, propagation, SpanKind } from "@opentelemetry/api";
-import type { Span } from "@opentelemetry/api";
 import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
 
 import {
@@ -43,16 +42,13 @@ describe("A365SpanProcessor", () => {
       const ctx = propagation.setBaggage(context.active(), baggage);
 
       const tracer = provider.getTracer("test");
-      let testSpan: Span | undefined;
+      const testSpan = tracer.startSpan("test-span", { kind: SpanKind.CLIENT }, ctx);
+      testSpan.end();
 
-      context.with(ctx, () => {
-        testSpan = tracer.startSpan("test-span", { kind: SpanKind.CLIENT });
-        if (testSpan) {
-          testSpan.end();
-        }
-      });
-
-      expect(testSpan).toBeDefined();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const attrs = (testSpan as any)._attributes ?? (testSpan as any).attributes ?? {};
+      expect(attrs[OpenTelemetryConstants.TENANT_ID_KEY]).toBe("tenant-123");
+      expect(attrs[OpenTelemetryConstants.GEN_AI_AGENT_ID_KEY]).toBe("agent-789");
     });
 
     it("should copy sessionId from baggage to span", () => {
@@ -105,18 +101,13 @@ describe("A365SpanProcessor", () => {
       const ctx = propagation.setBaggage(context.active(), baggage);
 
       const tracer = provider.getTracer("test");
-      let testSpan: Span | undefined;
+      const testSpan = tracer.startSpan("invoke_agent test", { kind: SpanKind.CLIENT }, ctx);
+      testSpan.end();
 
-      context.with(ctx, () => {
-        testSpan = tracer.startSpan("invoke_agent test", {
-          kind: SpanKind.CLIENT,
-        });
-        if (testSpan) {
-          testSpan.end();
-        }
-      });
-
-      expect(testSpan).toBeDefined();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const attrs = (testSpan as any)._attributes ?? (testSpan as any).attributes ?? {};
+      expect(attrs[OpenTelemetryConstants.TENANT_ID_KEY]).toBe("tenant-123");
+      expect(attrs[OpenTelemetryConstants.USER_ID_KEY]).toBe("caller-456");
     });
 
     it("should not overwrite existing span attributes", () => {
@@ -128,21 +119,18 @@ describe("A365SpanProcessor", () => {
       const ctx = propagation.setBaggage(context.active(), baggage);
 
       const tracer = provider.getTracer("test");
-      let testSpan: Span | undefined;
-
-      context.with(ctx, () => {
-        testSpan = tracer.startSpan("test-span", {
+      const testSpan = tracer.startSpan(
+        "test-span",
+        {
           kind: SpanKind.CLIENT,
           attributes: {
             [OpenTelemetryConstants.TENANT_ID_KEY]: "tenant-existing",
           },
-        });
-        if (testSpan) {
-          testSpan.end();
-        }
-      });
+        },
+        ctx,
+      );
+      testSpan.end();
 
-      expect(testSpan).toBeDefined();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const attrs = (testSpan as any)._attributes ?? (testSpan as any).attributes ?? {};
       expect(attrs[OpenTelemetryConstants.TENANT_ID_KEY]).toBe("tenant-existing");
@@ -155,16 +143,12 @@ describe("A365SpanProcessor", () => {
       const ctx = propagation.setBaggage(context.active(), baggage);
 
       const tracer = provider.getTracer("test");
-      let testSpan: Span | undefined;
+      const testSpan = tracer.startSpan("test-span", { kind: SpanKind.CLIENT }, ctx);
+      testSpan.end();
 
-      context.with(ctx, () => {
-        testSpan = tracer.startSpan("test-span", { kind: SpanKind.CLIENT });
-        if (testSpan) {
-          testSpan.end();
-        }
-      });
-
-      expect(testSpan).toBeDefined();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const attrs = (testSpan as any)._attributes ?? (testSpan as any).attributes ?? {};
+      expect(attrs[OpenTelemetryConstants.TENANT_ID_KEY]).toBeUndefined();
     });
 
     it("should set telemetry SDK attributes", () => {
