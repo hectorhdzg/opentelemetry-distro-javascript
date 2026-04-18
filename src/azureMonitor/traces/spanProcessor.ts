@@ -4,7 +4,7 @@
 import type { Context } from "@opentelemetry/api";
 import type { ReadableSpan, Span, SpanProcessor } from "@opentelemetry/sdk-trace-base";
 import type { MetricHandler } from "../metrics/index.js";
-import { Logger } from "../shared/logging/index.js";
+import { Logger } from "../../shared/logging/index.js";
 
 /**
  * Azure Monitor Span Processor.

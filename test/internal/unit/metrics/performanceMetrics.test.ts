@@ -4,7 +4,7 @@ import type { MockInstance } from "vitest";
 import { afterEach, assert, beforeAll, afterAll, describe, it, vi } from "vitest";
 import { SpanKind } from "@opentelemetry/api";
 import { ExportResultCode } from "@opentelemetry/core";
-import { PerformanceCounterMetrics } from "../../../../src/metrics/performanceCounters.js";
+import { PerformanceCounterMetrics } from "../../../../src/azureMonitor/metrics/performanceCounters.js";
 import {
   SEMRESATTRS_SERVICE_NAME,
   SEMRESATTRS_SERVICE_INSTANCE_ID,

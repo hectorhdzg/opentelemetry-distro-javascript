@@ -42,7 +42,7 @@ import {
   getNetPeerName,
   getUserAgent,
 } from "./quickpulse/utils.js";
-import { Logger } from "../shared/logging/logger.js";
+import { Logger } from "../../shared/logging/logger.js";
 import os from "node:os";
 import process from "node:process";
 import { readFileSync } from "node:fs";

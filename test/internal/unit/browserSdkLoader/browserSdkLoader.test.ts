@@ -2,8 +2,8 @@
 // Licensed under the MIT License.
 
 import type http from "node:http";
-import { BrowserSdkLoader } from "../../../../src/browserSdkLoader/browserSdkLoader.js";
-import * as BrowserSdkLoaderHelper from "../../../../src/browserSdkLoader/browserSdkLoaderHelper.js";
+import { BrowserSdkLoader } from "../../../../src/azureMonitor/browserSdkLoader/browserSdkLoader.js";
+import * as BrowserSdkLoaderHelper from "../../../../src/azureMonitor/browserSdkLoader/browserSdkLoaderHelper.js";
 import type { MicrosoftOpenTelemetryOptions } from "../../../../src/index.js";
 import { shutdownAzureMonitor, useAzureMonitor } from "../../../../src/index.js";
 import { getOsPrefix } from "../../../../src/utils/common.js";

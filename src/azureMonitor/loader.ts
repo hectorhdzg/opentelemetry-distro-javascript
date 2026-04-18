@@ -12,8 +12,8 @@
  */
 
 import * as nodeModule from "node:module";
-import { Logger } from "./shared/logging/index.js";
-import { getModuleParentURL } from "./shared/module.js";
+import { Logger } from "../shared/logging/index.js";
+import { getModuleParentURL } from "../shared/module.js";
 
 const OTEL_LOADER_SPECIFIER = "@opentelemetry/instrumentation/hook.mjs";
 

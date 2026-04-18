@@ -2,9 +2,9 @@
 // Licensed under the MIT License.
 
 import { AzureFunctionsInstrumentation } from "@azure/functions-opentelemetry-instrumentation";
-import { TraceHandler } from "../../../../src/traces/index.js";
+import { TraceHandler } from "../../../../src/azureMonitor/traces/index.js";
 import { InternalConfig } from "../../../../src/shared/index.js";
-import { MetricHandler } from "../../../../src/metrics/index.js";
+import { MetricHandler } from "../../../../src/azureMonitor/metrics/index.js";
 import { metrics, trace } from "@opentelemetry/api";
 import { describe, it, beforeEach, afterEach, assert } from "vitest";
 import { shutdownAzureMonitor, useAzureMonitor } from "../../../../src/index.js";

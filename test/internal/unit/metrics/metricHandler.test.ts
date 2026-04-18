@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import { MetricHandler } from "../../../../src/metrics/index.js";
+import { MetricHandler } from "../../../../src/azureMonitor/metrics/index.js";
 import { InternalConfig } from "../../../../src/shared/index.js";
 import { Logger } from "../../../../src/shared/logging/index.js";
 import { ExportResultCode } from "@opentelemetry/core";

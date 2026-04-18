@@ -26,7 +26,7 @@ vi.mock("node:os", async (importOriginal) => {
   };
 });
 
-import { readAvailableMemory } from "../../../../src/metrics/utils.js";
+import { readAvailableMemory } from "../../../../src/azureMonitor/metrics/utils.js";
 
 describe("readAvailableMemory", () => {
   const originalPlatform = process.platform;

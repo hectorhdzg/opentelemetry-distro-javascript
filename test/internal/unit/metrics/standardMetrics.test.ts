@@ -23,9 +23,9 @@ import {
 import { ExportResultCode } from "@opentelemetry/core";
 import type { SdkLogRecord } from "@opentelemetry/sdk-logs";
 import { resourceFromAttributes } from "@opentelemetry/resources";
-import { StandardMetrics } from "../../../../src/metrics/standardMetrics.js";
+import { StandardMetrics } from "../../../../src/azureMonitor/metrics/standardMetrics.js";
 import { InternalConfig } from "../../../../src/shared/index.js";
-import { getDependencyTarget } from "../../../../src/metrics/utils.js";
+import { getDependencyTarget } from "../../../../src/azureMonitor/metrics/utils.js";
 import type { MockInstance } from "vitest";
 import { expect, afterAll, afterEach, beforeAll, describe, it, vi, assert } from "vitest";
 
