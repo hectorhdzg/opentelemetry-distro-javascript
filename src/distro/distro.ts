@@ -10,6 +10,7 @@ import type { SpanProcessor } from "@opentelemetry/sdk-trace-base";
 import type { LogRecordProcessor } from "@opentelemetry/sdk-logs";
 
 import { InternalConfig } from "../shared/config.js";
+import { JsonConfig } from "../shared/jsonConfig.js";
 import { MetricHandler } from "../azureMonitor/metrics/index.js";
 import { TraceHandler } from "../azureMonitor/traces/handler.js";
 import { LogHandler } from "../azureMonitor/logs/index.js";
@@ -103,13 +104,47 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
     }
   }
 
-  // ── A365 observability (enabled via options.a365 or env vars) ──────
-  // Determine whether A365 is enabled via programmatic options or env var.
-  const a365Enabled =
-    options?.a365?.enabled ||
-    ["true", "1", "yes", "on"].includes(
-      (process.env.ENABLE_A365_OBSERVABILITY_EXPORTER ?? "").trim().toLowerCase(),
-    );
+  // ── A365 observability (enabled via env var, JSON config, or options) ──
+  // Precedence: env vars > JSON config > programmatic options.
+  const envExporterFlag = (process.env.ENABLE_A365_OBSERVABILITY_EXPORTER ?? "")
+    .trim()
+    .toLowerCase();
+  const jsonA365 = JsonConfig.getInstance().a365;
+
+  // Merge A365 options: programmatic < JSON config < env vars
+  const mergedA365 = {
+    enabled: options?.a365?.enabled,
+    tokenResolver: options?.a365?.tokenResolver,
+    clusterCategory: options?.a365?.clusterCategory,
+    domainOverride: options?.a365?.domainOverride,
+    authScopes: options?.a365?.authScopes,
+    perRequestExport: options?.a365?.perRequestExport,
+    // JSON config overrides programmatic options
+    ...(jsonA365
+      ? {
+          ...(jsonA365.enabled !== undefined ? { enabled: jsonA365.enabled } : {}),
+          ...(jsonA365.clusterCategory !== undefined
+            ? { clusterCategory: jsonA365.clusterCategory }
+            : {}),
+          ...(jsonA365.domainOverride !== undefined
+            ? { domainOverride: jsonA365.domainOverride }
+            : {}),
+          ...(jsonA365.authScopes !== undefined ? { authScopes: jsonA365.authScopes } : {}),
+          ...(jsonA365.perRequestExport !== undefined
+            ? { perRequestExport: jsonA365.perRequestExport }
+            : {}),
+          // tokenResolver cannot come from JSON — it's a function
+        }
+      : {}),
+  };
+
+  // Env var has highest precedence for enabled (tri-state: unset → fall through, true/false → override)
+  let a365Enabled: boolean;
+  if (envExporterFlag) {
+    a365Enabled = ["true", "1", "yes", "on"].includes(envExporterFlag);
+  } else {
+    a365Enabled = mergedA365.enabled ?? false;
+  }
 
   const views: ViewOptions[] = metricHandler.getViews().concat(customViews);
 
@@ -146,21 +181,18 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
     if (!process.env.ENABLE_A365_OBSERVABILITY_EXPORTER) {
       process.env.ENABLE_A365_OBSERVABILITY_EXPORTER = "true";
     }
-    if (
-      options?.a365?.perRequestExport &&
-      !process.env.ENABLE_A365_OBSERVABILITY_PER_REQUEST_EXPORT
-    ) {
+    if (mergedA365.perRequestExport && !process.env.ENABLE_A365_OBSERVABILITY_PER_REQUEST_EXPORT) {
       process.env.ENABLE_A365_OBSERVABILITY_PER_REQUEST_EXPORT = "true";
     }
-    if (options?.a365?.domainOverride && !process.env.A365_OBSERVABILITY_DOMAIN_OVERRIDE) {
-      process.env.A365_OBSERVABILITY_DOMAIN_OVERRIDE = options.a365.domainOverride;
+    if (mergedA365.domainOverride && !process.env.A365_OBSERVABILITY_DOMAIN_OVERRIDE) {
+      process.env.A365_OBSERVABILITY_DOMAIN_OVERRIDE = mergedA365.domainOverride;
     }
 
     // Build a config provider if the caller specified domain override or auth scopes
     let configProvider: IConfigurationProvider<ObservabilityConfiguration> | undefined;
-    if (options?.a365?.domainOverride || options?.a365?.authScopes) {
-      const domainOverride = options.a365.domainOverride ?? null;
-      const authScopes = options.a365.authScopes;
+    if (mergedA365.domainOverride || mergedA365.authScopes) {
+      const domainOverride = mergedA365.domainOverride ?? null;
+      const authScopes = mergedA365.authScopes;
       configProvider = {
         getConfiguration: () =>
           new ObservabilityConfiguration({
@@ -172,8 +204,8 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
     }
 
     ObservabilityManager.start({
-      tokenResolver: options?.a365?.tokenResolver,
-      clusterCategory: options?.a365?.clusterCategory,
+      tokenResolver: mergedA365.tokenResolver,
+      clusterCategory: mergedA365.clusterCategory,
       configProvider,
     });
   }
