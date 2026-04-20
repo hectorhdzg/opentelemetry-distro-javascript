@@ -7,11 +7,11 @@ import { webSnippet as sdkLoader } from "@microsoft/applicationinsights-web-snip
 import * as browserSdkLoaderHelper from "./browserSdkLoaderHelper.js";
 import * as prefixHelper from "../utils/common.js";
 import * as zlib from "zlib";
-import type { InternalConfig } from "../shared/index.js";
+import type { InternalConfig } from "../../shared/index.js";
 import { ConnectionStringParser } from "../utils/connectionStringParser.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { Logger } from "../shared/logging/logger.js";
-import { BROWSER_SDK_LOADER_DEFAULT_SOURCE } from "../types.js";
+import { Logger } from "../../shared/logging/logger.js";
+import { BROWSER_SDK_LOADER_DEFAULT_SOURCE } from "../../types.js";
 import { diag } from "@opentelemetry/api";
 
 export class BrowserSdkLoader {

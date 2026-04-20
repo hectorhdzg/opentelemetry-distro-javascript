@@ -63,7 +63,7 @@ import {
   AZURE_MONITOR_OPENTELEMETRY_VERSION,
   AZURE_MONITOR_PREFIX,
   AttachTypePrefix,
-} from "../../types.js";
+} from "../../../types.js";
 import type {
   RequestData,
   DependencyData,
@@ -82,7 +82,7 @@ import { getOsPrefix } from "../../utils/common.js";
 import { getResourceProvider } from "../../utils/common.js";
 import type { LogAttributes } from "@opentelemetry/api-logs";
 import { getDependencyTarget, isSqlDB, isExceptionTelemetry } from "../utils.js";
-import { Logger } from "../../shared/logging/index.js";
+import { Logger } from "../../../shared/logging/index.js";
 
 /** Get the internal SDK version */
 export function getSdkVersion(): string {

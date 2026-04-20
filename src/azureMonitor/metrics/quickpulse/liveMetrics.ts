@@ -7,7 +7,7 @@ import type {
 } from "@opentelemetry/sdk-metrics";
 import { MeterProvider, PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import type { SdkLogRecord } from "@opentelemetry/sdk-logs";
-import type { InternalConfig } from "../../shared/config.js";
+import type { InternalConfig } from "../../../shared/config.js";
 import type { Meter, ObservableGauge, ObservableResult } from "@opentelemetry/api";
 import { SpanKind, SpanStatusCode, ValueType, context } from "@opentelemetry/api";
 import type { ReadableSpan, TimedEvent } from "@opentelemetry/sdk-trace-base";
@@ -40,7 +40,7 @@ import {
 import { QuickpulseMetricExporter } from "./export/exporter.js";
 import { QuickpulseSender } from "./export/sender.js";
 import { ConnectionStringParser } from "../../utils/connectionStringParser.js";
-import { DEFAULT_LIVEMETRICS_ENDPOINT } from "../../types.js";
+import { DEFAULT_LIVEMETRICS_ENDPOINT } from "../../../types.js";
 import type {
   QuickpulseExporterOptions,
   RequestData,
@@ -66,7 +66,7 @@ import {
 import { SEMATTRS_EXCEPTION_TYPE } from "@opentelemetry/semantic-conventions";
 import { getPhysicalMemory, getProcessorTimeNormalized } from "../utils.js";
 import { getCloudRole, getCloudRoleInstance } from "../utils.js";
-import { Logger } from "../../shared/logging/logger.js";
+import { Logger } from "../../../shared/logging/logger.js";
 
 const POST_INTERVAL = 1000;
 const MAX_POST_WAIT_TIME = 20000;

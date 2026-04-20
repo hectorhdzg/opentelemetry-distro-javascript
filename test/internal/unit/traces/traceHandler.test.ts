@@ -1,10 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import { TraceHandler } from "../../../../src/traces/index.js";
-import { MetricHandler } from "../../../../src/metrics/index.js";
+import { TraceHandler } from "../../../../src/azureMonitor/traces/index.js";
+import { MetricHandler } from "../../../../src/azureMonitor/metrics/index.js";
 import { InternalConfig } from "../../../../src/shared/index.js";
-import { ApplicationInsightsSampler } from "../../../../src/traces/sampler.js";
+import { ApplicationInsightsSampler } from "../../../../src/azureMonitor/traces/sampler.js";
 import {
   HttpInstrumentation,
   type HttpInstrumentationConfig,

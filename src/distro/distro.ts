@@ -10,13 +10,13 @@ import { type SpanProcessor, BatchSpanProcessor } from "@opentelemetry/sdk-trace
 import type { LogRecordProcessor } from "@opentelemetry/sdk-logs";
 
 import { InternalConfig } from "../shared/config.js";
-import { MetricHandler } from "../metrics/index.js";
-import { TraceHandler } from "../traces/handler.js";
-import { LogHandler } from "../logs/index.js";
+import { MetricHandler } from "../azureMonitor/metrics/index.js";
+import { TraceHandler } from "../azureMonitor/traces/handler.js";
+import { LogHandler } from "../azureMonitor/logs/index.js";
 import { AZURE_MONITOR_OPENTELEMETRY_VERSION } from "../types.js";
-import { patchOpenTelemetryInstrumentationEnable } from "../utils/opentelemetryInstrumentationPatcher.js";
+import { patchOpenTelemetryInstrumentationEnable } from "../azureMonitor/utils/opentelemetryInstrumentationPatcher.js";
 import { parseResourceDetectorsFromEnvVar } from "../utils/common.js";
-import { setupAzureMonitorComponents } from "../azureMonitorSetup.js";
+import { setupAzureMonitorComponents } from "../azureMonitor/index.js";
 import { isOtlpEnabled, createOtlpComponents } from "../otlp/index.js";
 import {
   A365Configuration,

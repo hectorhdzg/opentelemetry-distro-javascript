@@ -19,10 +19,10 @@ import { MeterProvider, PeriodicExportingMetricReader } from "@opentelemetry/sdk
 import type { ReadableSpan, TimedEvent } from "@opentelemetry/sdk-trace-base";
 import { PerformanceCounterMetricNames } from "./types.js";
 import { hrTimeToMilliseconds } from "@opentelemetry/core";
-import type { InternalConfig } from "../shared/config.js";
+import type { InternalConfig } from "../../shared/config.js";
 import { getLogData, isExceptionData } from "./quickpulse/utils.js";
 import type { ExceptionData, TraceData } from "./quickpulse/types.js";
-import { Logger } from "../shared/logging/logger.js";
+import { Logger } from "../../shared/logging/logger.js";
 import { readAvailableMemory } from "./utils.js";
 import process from "node:process";
 

@@ -7,7 +7,7 @@ import type {
 } from "@opentelemetry/sdk-metrics";
 import { MeterProvider, PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import type { SdkLogRecord } from "@opentelemetry/sdk-logs";
-import type { InternalConfig } from "../shared/config.js";
+import type { InternalConfig } from "../../shared/config.js";
 import { AzureMonitorMetricExporter } from "@azure/monitor-opentelemetry-exporter";
 import type { Counter, Histogram, Meter } from "@opentelemetry/api";
 import { SpanKind, ValueType } from "@opentelemetry/api";

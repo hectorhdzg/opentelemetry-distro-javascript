@@ -6,7 +6,7 @@ import type { Instrumentation } from "@opentelemetry/instrumentation";
 import { BunyanInstrumentation } from "@opentelemetry/instrumentation-bunyan";
 import { WinstonInstrumentation } from "@opentelemetry/instrumentation-winston";
 import type { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs";
-import type { InternalConfig } from "../shared/config.js";
+import type { InternalConfig } from "../../shared/config.js";
 import type { MetricHandler } from "../metrics/handler.js";
 import { AzureLogRecordProcessor } from "./logRecordProcessor.js";
 import { AzureBatchLogRecordProcessor } from "./batchLogRecordProcessor.js";

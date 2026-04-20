@@ -11,25 +11,25 @@ import type {
   Trace,
   DocumentFilterConjunctionGroupInfo,
   TelemetryType,
-} from "../../../../src/generated/index.js";
-import { Validator } from "../../../../src/metrics/quickpulse/filtering/validator.js";
-import { Filter } from "../../../../src/metrics/quickpulse/filtering/filter.js";
-import { Projection } from "../../../../src/metrics/quickpulse/filtering/projection.js";
+} from "../../../../src/azureMonitor/generated/index.js";
+import { Validator } from "../../../../src/azureMonitor/metrics/quickpulse/filtering/validator.js";
+import { Filter } from "../../../../src/azureMonitor/metrics/quickpulse/filtering/filter.js";
+import { Projection } from "../../../../src/azureMonitor/metrics/quickpulse/filtering/projection.js";
 import {
   TelemetryTypeError,
   UnexpectedFilterCreateError,
   MetricFailureToCreateError,
-} from "../../../../src/metrics/quickpulse/filtering/quickpulseErrors.js";
+} from "../../../../src/azureMonitor/metrics/quickpulse/filtering/quickpulseErrors.js";
 import type {
   RequestData,
   DependencyData,
   ExceptionData,
   TraceData,
-} from "../../../../src/metrics/quickpulse/types.js";
+} from "../../../../src/azureMonitor/metrics/quickpulse/types.js";
 import {
   KnownRequestColumns,
   KnownDependencyColumns,
-} from "../../../../src/metrics/quickpulse/types.js";
+} from "../../../../src/azureMonitor/metrics/quickpulse/types.js";
 import { SpanKind, SpanStatusCode } from "@opentelemetry/api";
 import { millisToHrTime } from "@opentelemetry/core";
 import { resourceFromAttributes } from "@opentelemetry/resources";
@@ -41,7 +41,7 @@ import {
   getSpanDocument,
   getLogDocument,
   getMsFromFilterTimestampString,
-} from "../../../../src/metrics/quickpulse/utils.js";
+} from "../../../../src/azureMonitor/metrics/quickpulse/utils.js";
 import { assert, describe, it } from "vitest";
 
 describe("Live Metrics filtering - Validator", () => {

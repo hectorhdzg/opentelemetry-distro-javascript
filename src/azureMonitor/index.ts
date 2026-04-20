@@ -7,9 +7,9 @@
  * Azure Monitor concerns — not part of the generic OTel distro lifecycle.
  */
 
-import type { InternalConfig } from "./shared/config.js";
-import type { StatsbeatFeatures, StatsbeatInstrumentations } from "./types.js";
-import { APPLICATIONINSIGHTS_SDKSTATS_DISABLED } from "./types.js";
+import type { InternalConfig } from "../shared/config.js";
+import type { StatsbeatFeatures, StatsbeatInstrumentations } from "../types.js";
+import { APPLICATIONINSIGHTS_SDKSTATS_DISABLED } from "../types.js";
 import { BrowserSdkLoader } from "./browserSdkLoader/browserSdkLoader.js";
 import { setSdkPrefix } from "./metrics/quickpulse/utils.js";
 import { getInstance } from "./utils/statsbeat.js";

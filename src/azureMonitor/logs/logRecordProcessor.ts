@@ -3,7 +3,7 @@
 
 import type { MetricHandler } from "../metrics/handler.js";
 import type { LogRecordProcessor, SdkLogRecord } from "@opentelemetry/sdk-logs";
-import { Logger } from "../shared/logging/index.js";
+import { Logger } from "../../shared/logging/index.js";
 
 /**
  * Azure Monitor LogRecord Processor.

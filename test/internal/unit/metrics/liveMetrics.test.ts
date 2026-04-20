@@ -5,15 +5,19 @@ import { SpanKind, SpanStatusCode } from "@opentelemetry/api";
 import { ExportResultCode, millisToHrTime } from "@opentelemetry/core";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { createMockSdkLogRecord } from "../../../utils/breezeTestUtils.js";
-import { LiveMetrics } from "../../../../src/metrics/quickpulse/liveMetrics.js";
+import { LiveMetrics } from "../../../../src/azureMonitor/metrics/quickpulse/liveMetrics.js";
 import { InternalConfig } from "../../../../src/shared/index.js";
 import {
   QuickPulseMetricNames,
   QuickPulseOpenTelemetryMetricNames,
-} from "../../../../src/metrics/quickpulse/types.js";
-import type { Exception, RemoteDependency, Request } from "../../../../src/generated/index.js";
+} from "../../../../src/azureMonitor/metrics/quickpulse/types.js";
+import type {
+  Exception,
+  RemoteDependency,
+  Request,
+} from "../../../../src/azureMonitor/generated/index.js";
 import type { AccessToken, TokenCredential } from "@azure/core-auth";
-import { resourceMetricsToQuickpulseDataPoint } from "../../../../src/metrics/quickpulse/utils.js";
+import { resourceMetricsToQuickpulseDataPoint } from "../../../../src/azureMonitor/metrics/quickpulse/utils.js";
 import {
   ATTR_HTTP_REQUEST_METHOD,
   ATTR_HTTP_RESPONSE_STATUS_CODE,
