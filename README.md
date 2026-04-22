@@ -85,8 +85,8 @@ Most instrumentations are enabled by default. Pass `{ enabled: false }` to disab
 | `redis4` | `InstrumentationConfig` | enabled | Redis 4 instrumentation |
 | `bunyan` | `InstrumentationConfig` | disabled | Bunyan log instrumentation |
 | `winston` | `InstrumentationConfig` | disabled | Winston log instrumentation |
-| `openaiAgents` | `boolean \| OpenAIAgentsInstrumentationConfig` | disabled | OpenAI Agents SDK instrumentation (requires `@openai/agents`) |
-| `langchain` | `boolean \| LangChainInstrumentationConfig` | disabled | LangChain instrumentation (requires `@langchain/core`) |
+| `openaiAgents` | `boolean | OpenAIAgentsInstrumentationConfig` | disabled | OpenAI Agents SDK instrumentation (requires `@openai/agents`) |
+| `langchain` | `boolean | LangChainInstrumentationConfig` | disabled | LangChain instrumentation (requires `@langchain/core`) |
 
 ### `azureMonitor` options
 

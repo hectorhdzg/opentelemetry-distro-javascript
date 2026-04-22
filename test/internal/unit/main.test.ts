@@ -904,6 +904,8 @@ describe("Main functions", () => {
     }
 
     void shutdownMicrosoftOpenTelemetry();
+  });
+
   it("console exporters auto-enabled when no built-in exporters are active", async () => {
     const { useMicrosoftOpenTelemetry, shutdownMicrosoftOpenTelemetry } =
       await import("../../../src/index.js");

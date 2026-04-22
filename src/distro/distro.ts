@@ -15,7 +15,6 @@ import {
 import type { LogRecordProcessor } from "@opentelemetry/sdk-logs";
 import { SimpleLogRecordProcessor, ConsoleLogRecordExporter } from "@opentelemetry/sdk-logs";
 import { ConsoleMetricExporter, PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
-import type { Instrumentation } from "@opentelemetry/instrumentation";
 
 import { InternalConfig } from "../shared/config.js";
 import { MetricHandler } from "../azureMonitor/metrics/index.js";
@@ -175,8 +174,6 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
     );
     logRecordProcessors.push(new SimpleLogRecordProcessor(new ConsoleLogRecordExporter()));
   }
-
-  const views: ViewOptions[] = [...(metricHandler ? metricHandler.getViews() : []), ...customViews];
 
   // ── Create and start NodeSDK ──────────────────────────────────────
   const sdkConfig: Partial<NodeSDKConfiguration> = {
