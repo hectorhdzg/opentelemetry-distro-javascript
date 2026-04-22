@@ -6,8 +6,16 @@ import { logs } from "@opentelemetry/api-logs";
 import type { NodeSDKConfiguration } from "@opentelemetry/sdk-node";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import type { MetricReader, ViewOptions } from "@opentelemetry/sdk-metrics";
-import { type SpanProcessor, BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
+import {
+  type SpanProcessor,
+  BatchSpanProcessor,
+  SimpleSpanProcessor,
+  ConsoleSpanExporter,
+} from "@opentelemetry/sdk-trace-base";
 import type { LogRecordProcessor } from "@opentelemetry/sdk-logs";
+import { SimpleLogRecordProcessor, ConsoleLogRecordExporter } from "@opentelemetry/sdk-logs";
+import { ConsoleMetricExporter, PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
+import type { Instrumentation } from "@opentelemetry/instrumentation";
 
 import { InternalConfig } from "../shared/config.js";
 import { MetricHandler } from "../azureMonitor/metrics/index.js";
@@ -149,6 +157,26 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
     ...(metricHandler ? metricHandler.getViews() : views),
     ...customViews,
   ];
+  // ── Console exporters (auto-enabled when no other exporter is active, or explicitly) ─
+  const hasCustomProcessors =
+    (options?.spanProcessors?.length ?? 0) > 0 ||
+    (options?.metricReaders?.length ?? 0) > 0 ||
+    (options?.logRecordProcessors?.length ?? 0) > 0;
+  const consoleEnabled =
+    options?.enableConsoleExporters ??
+    (!azureMonitorEnabled && !isOtlpEnabled() && !a365Config.enabled && !hasCustomProcessors);
+  if (consoleEnabled) {
+    spanProcessors.push(new SimpleSpanProcessor(new ConsoleSpanExporter()));
+    metricReaders.push(
+      new PeriodicExportingMetricReader({
+        exporter: new ConsoleMetricExporter(),
+        exportIntervalMillis: config.metricExportIntervalMillis,
+      }),
+    );
+    logRecordProcessors.push(new SimpleLogRecordProcessor(new ConsoleLogRecordExporter()));
+  }
+
+  const views: ViewOptions[] = [...(metricHandler ? metricHandler.getViews() : []), ...customViews];
 
   // ── Create and start NodeSDK ──────────────────────────────────────
   const sdkConfig: Partial<NodeSDKConfiguration> = {
