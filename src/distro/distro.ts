@@ -50,7 +50,9 @@ let disposeAzureMonitor: (() => void) | undefined;
  *
  * This is the primary entry point for the distro. It sets up OpenTelemetry
  * providers and instrumentations, then attaches the configured exporters:
- * - Azure Monitor (enabled by default; disable with `options.azureMonitor.enabled = false`)
+ * - Azure Monitor (when `options.azureMonitor` is provided or the
+ *   `APPLICATIONINSIGHTS_CONNECTION_STRING` env var is set; explicitly disable
+ *   with `options.azureMonitor.enabled = false`)
  * - OTLP HTTP (when `OTEL_EXPORTER_OTLP_ENDPOINT` is set)
  * - A365 (when `options.a365.enabled` is true or `ENABLE_A365_OBSERVABILITY_EXPORTER=true`)
  *
@@ -61,10 +63,11 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
   patchOpenTelemetryInstrumentationEnable();
 
   // Azure Monitor is enabled when configured programmatically or via JSON config.
+  // An explicit `enabled: false` always wins, even if a connection string is present.
   // Connection-string validation is delegated to the Azure Monitor module.
   const azureMonitorRequested =
-    (options?.azureMonitor?.enabled !== false && !!options?.azureMonitor) ||
-    hasAzureMonitorConnectionString(config);
+    options?.azureMonitor?.enabled !== false &&
+    (!!options?.azureMonitor || hasAzureMonitorConnectionString(config));
   const azureMonitorEnabled = azureMonitorRequested && validateAzureMonitorConfig(config);
 
   // Reset dispose callback to avoid stale references from a previous initialization
