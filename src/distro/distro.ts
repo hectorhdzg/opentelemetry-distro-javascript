@@ -14,10 +14,7 @@ import {
 } from "@opentelemetry/sdk-trace-base";
 import type { LogRecordProcessor } from "@opentelemetry/sdk-logs";
 import { SimpleLogRecordProcessor, ConsoleLogRecordExporter } from "@opentelemetry/sdk-logs";
-import {
-  ConsoleMetricExporter,
-  PeriodicExportingMetricReader,
-} from "@opentelemetry/sdk-metrics";
+import { ConsoleMetricExporter, PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import type { Instrumentation } from "@opentelemetry/instrumentation";
 
 import { InternalConfig } from "../shared/config.js";
