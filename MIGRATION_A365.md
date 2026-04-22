@@ -60,7 +60,12 @@ All public APIs are re-exported from the root `@microsoft/opentelemetry` package
 | `runWithExtractedTraceContext` | `runWithExtractedTraceContext` |
 | `MessageRole` | `MessageRole` |
 | `FinishReason` | `FinishReason` |
+| `Modality` | `Modality` |
+| `InvocationRole` | `InvocationRole` |
 | `InferenceOperationType` | `InferenceOperationType` |
+| `A365_MESSAGE_SCHEMA_VERSION` | `A365_MESSAGE_SCHEMA_VERSION` |
+| `GENERIC_ATTRIBUTES` | `GENERIC_ATTRIBUTES` |
+| `INVOKE_AGENT_ATTRIBUTES` | `INVOKE_AGENT_ATTRIBUTES` |
 
 ### Types
 
@@ -81,6 +86,17 @@ All public APIs are re-exported from the root `@microsoft/opentelemetry` package
 | `ParentSpanRef` | `ParentSpanRef` |
 | `ParentContext` | `ParentContext` |
 | `ChatMessage` | `ChatMessage` |
+| `InputMessages` | `InputMessages` |
+| `OutputMessage` | `OutputMessage` |
+| `OutputMessages` | `OutputMessages` |
+| `InputMessagesParam` | `InputMessagesParam` |
+| `OutputMessagesParam` | `OutputMessagesParam` |
+| `ResponseMessagesParam` | `ResponseMessagesParam` |
+| `MessagePart` | `MessagePart` |
+| `TextPart` | `TextPart` |
+| `ToolCallRequestPart` | `ToolCallRequestPart` |
+| `ToolCallResponsePart` | `ToolCallResponsePart` |
+| `ReasoningPart` | `ReasoningPart` |
 | `HeadersCarrier` | `HeadersCarrier` |
 
 ### Processor Classes
@@ -148,44 +164,56 @@ Environment variable names are **unchanged** from Agent365-nodejs:
 
 ## Scopes
 
-Scope usage is identical. Just update the import path:
+Scope API is unchanged. All scopes use static factory methods (`Scope.start(...)`) and are cleaned up with `.dispose()`. Just update the import path:
 
 ### Before
 
 ```typescript
-import { InvokeAgentScope } from "@microsoft/agents-a365-observability";
+import {
+  InvokeAgentScope,
+  InferenceScope,
+  ExecuteToolScope,
+  OutputScope,
+} from "@microsoft/agents-a365-observability";
+import type { AgentDetails, Request, InvokeAgentScopeDetails } from "@microsoft/agents-a365-observability";
 
-const scope = new InvokeAgentScope({
-  agent: { id: "agent-123", name: "MyAgent" },
-  request: { tenantId: "tenant-456" },
-  invokeAgent: { targetAgentId: "target-789" },
-});
+const request: Request = { conversationId: "conv-123", channel: { name: "msteams" } };
+const agentDetails: AgentDetails = { agentId: "agent-123", agentName: "MyAgent", tenantId: "tenant-456" };
+const scopeDetails: InvokeAgentScopeDetails = { endpoint: { host: "example.com", port: 443 } };
 
-scope.start();
+const scope = InvokeAgentScope.start(request, scopeDetails, agentDetails);
 try {
+  scope.recordInputMessages(["What is the weather?"]);
   // ... agent work
+  scope.recordResponse("It's sunny!");
 } finally {
-  scope.end();
+  scope.dispose();
 }
 ```
 
 ### After
 
 ```typescript
-import { InvokeAgentScope } from "@microsoft/opentelemetry";
+import {
+  InvokeAgentScope,
+  InferenceScope,
+  ExecuteToolScope,
+  OutputScope,
+} from "@microsoft/opentelemetry";
+import type { A365Request, AgentDetails, InvokeAgentScopeDetails } from "@microsoft/opentelemetry";
 
-// Same API — just a different import path
-const scope = new InvokeAgentScope({
-  agent: { id: "agent-123", name: "MyAgent" },
-  request: { tenantId: "tenant-456" },
-  invokeAgent: { targetAgentId: "target-789" },
-});
+// Same API — just a different import path (and Request → A365Request)
+const request: A365Request = { conversationId: "conv-123", channel: { name: "msteams" } };
+const agentDetails: AgentDetails = { agentId: "agent-123", agentName: "MyAgent", tenantId: "tenant-456" };
+const scopeDetails: InvokeAgentScopeDetails = { endpoint: { host: "example.com", port: 443 } };
 
-scope.start();
+const scope = InvokeAgentScope.start(request, scopeDetails, agentDetails);
 try {
+  scope.recordInputMessages(["What is the weather?"]);
   // ... agent work
+  scope.recordResponse("It's sunny!");
 } finally {
-  scope.end();
+  scope.dispose();
 }
 ```
 
@@ -227,15 +255,21 @@ runWithExportToken(initialToken, async () => {
 
 ## What's Not Migrated
 
-The following Agent365-nodejs components are **not** included in `@microsoft/opentelemetry` because they are runtime/hosting concerns rather than observability:
+The following Agent365-nodejs components are **not** included in `@microsoft/opentelemetry` because they are runtime/hosting concerns or internal utilities:
 
 | Component | Reason |
 |---|---|
-| `ObservabilityManager` / `ObservabilityBuilder` | Replaced by `useMicrosoftOpenTelemetry()` |
+| `ObservabilityManager` / `ObservabilityBuilder` / `Builder` | Replaced by `useMicrosoftOpenTelemetry()` |
+| `ObservabilityConfiguration` / `BuilderOptions` | Replaced by `A365Options` passed to `useMicrosoftOpenTelemetry()` |
+| `IConfigurationProvider` | Replaced by direct options + env vars |
 | `@microsoft/agents-a365-runtime` | Runtime configuration framework — not needed |
 | `@microsoft/agents-hosting` | HTTP hosting middleware — separate concern |
-| `IConfigurationProvider` | Replaced by direct options + env vars |
+| `@microsoft/agents-a365-observability-hosting` | Hosting middleware (`BaggageMiddleware`, `OutputLoggingMiddleware`, etc.) — separate concern |
 | `AgenticTokenCache` | Token caching is the caller's responsibility |
+| `logger` / `setLogger` / `getLogger` / `ILogger` | Use OpenTelemetry's `DiagLogger` API instead |
+| `safeSerializeToJson` / `serializeMessages` | Internal utilities — not part of the public API |
+| `ExporterEventNames` | Internal exporter events — not needed by consumers |
+| `isPerRequestExportEnabled` / `MAX_SPAN_SIZE_BYTES` | Internal constants — not needed by consumers |
 
 ## Checklist
 

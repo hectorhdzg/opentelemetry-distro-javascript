@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2023",
-    "module": "commonjs",
+    "module": "Node16",
     "lib": [],
     "importHelpers": true,
     "strict": true,
@@ -9,10 +9,11 @@
     "noUnusedParameters": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
-    "moduleResolution": "node10",
+    "moduleResolution": "Node16",
     "esModuleInterop": true,
     "outDir": "./dist",
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "skipLibCheck": true
   },
   "include": [
     "./src"
