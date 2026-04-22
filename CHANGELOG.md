@@ -8,8 +8,8 @@
 - Add a365 hosting middleware ([#29](https://github.com/microsoft/opentelemetry-distro-javascript/pull/29))
 
 ### Bugs Fixed
-- Fix A365 scopes producing no-op spans with zeroed trace/span IDs after distro initialization. ([#39](https://github.com/microsoft/opentelemetry-distro-javascript/pull/39))
-Remove legacy useAzureMonitor API and add Azure Monitor E2E tests([#38](https://github.com/microsoft/opentelemetry-distro-javascript/pull/38))
+- Fix A365 scopes producing no-op spans with zeroed trace/span IDs after distro initialization. ([#41](https://github.com/microsoft/opentelemetry-distro-javascript/pull/41))
+- Remove legacy useAzureMonitor API and add Azure Monitor E2E tests([#38](https://github.com/microsoft/opentelemetry-distro-javascript/pull/38))
 
 ## [0.1.0-alpha.3] - 2026-04-21
 
