@@ -69,36 +69,26 @@ export function createInstrumentations(
   }
 
   if (config.instrumentationOptions.azureSdk?.enabled) {
-    instrumentations.push(
-      createAzureSdkInstrumentation(config.instrumentationOptions.azureSdk),
-    );
+    instrumentations.push(createAzureSdkInstrumentation(config.instrumentationOptions.azureSdk));
   }
 
   if (config.instrumentationOptions.mongoDb?.enabled) {
-    instrumentations.push(
-      new MongoDBInstrumentation(config.instrumentationOptions.mongoDb),
-    );
+    instrumentations.push(new MongoDBInstrumentation(config.instrumentationOptions.mongoDb));
   }
 
   if (config.instrumentationOptions.mySql?.enabled) {
-    instrumentations.push(
-      new MySQLInstrumentation(config.instrumentationOptions.mySql),
-    );
+    instrumentations.push(new MySQLInstrumentation(config.instrumentationOptions.mySql));
   }
 
   if (config.instrumentationOptions.postgreSql?.enabled) {
-    instrumentations.push(
-      new PgInstrumentation(config.instrumentationOptions.postgreSql),
-    );
+    instrumentations.push(new PgInstrumentation(config.instrumentationOptions.postgreSql));
   }
 
   if (
     config.instrumentationOptions.redis?.enabled ||
     config.instrumentationOptions.redis4?.enabled
   ) {
-    instrumentations.push(
-      new RedisInstrumentation(config.instrumentationOptions.redis),
-    );
+    instrumentations.push(new RedisInstrumentation(config.instrumentationOptions.redis));
   }
 
   if (config.instrumentationOptions.azureFunctions?.enabled) {
@@ -164,10 +154,10 @@ export function createViews(config: InternalConfig): ViewOptions[] {
     views.push({ meterName: "@azure/opentelemetry-instrumentation-azure-sdk" });
   }
   if (config.instrumentationOptions.http?.enabled) {
-    views.push({ meterName: "@azure/opentelemetry-instrumentation-http" });
+    views.push({ meterName: "@opentelemetry/instrumentation-http" });
   }
   if (config.instrumentationOptions.mongoDb?.enabled) {
-    views.push({ meterName: "@azure/opentelemetry-instrumentation-mongodb" });
+    views.push({ meterName: "@opentelemetry/instrumentation-mongodb" });
   }
   if (config.instrumentationOptions.mySql?.enabled) {
     views.push({ meterName: "@opentelemetry/instrumentation-mysql" });

@@ -94,7 +94,6 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
     metricHandler = new MetricHandler(config);
     traceHandler = new TraceHandler(config, metricHandler);
     logHandler = new LogHandler(config, metricHandler);
-
   }
 
   const resourceDetectorsList = parseResourceDetectorsFromEnvVar();

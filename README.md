@@ -71,7 +71,7 @@ That's it — traces, metrics, and logs are collected automatically with built-i
 
 ### `InstrumentationOptions`
 
-All instrumentations are enabled by default. Pass `{ enabled: false }` to disable individual instrumentations, or provide an `InstrumentationConfig` object to customize them.
+Most instrumentations are enabled by default. Pass `{ enabled: false }` to disable individual instrumentations, or provide an `InstrumentationConfig` object to customize them.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
