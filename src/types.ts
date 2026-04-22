@@ -14,36 +14,6 @@ import type { A365Options } from "./a365/index.js";
 export const MICROSOFT_OPENTELEMETRY_VERSION = "0.1.0-alpha.3";
 
 /**
- * Specifies which exporters to enable in the Microsoft OpenTelemetry distro.
- * Multiple exporters can be combined using bitwise OR.
- *
- * Matches the .NET distro `ExportTarget` flags enum for cross-platform consistency.
- *
- * @example
- * ```ts
- * useMicrosoftOpenTelemetry({
- *   exporters: ExportTarget.AzureMonitor | ExportTarget.Console,
- *   azureMonitor: { azureMonitorExporterOptions: { connectionString: "..." } },
- * });
- * ```
- */
-export const ExportTarget = {
-  /** No exporters enabled. Instrumentation is still active. */
-  None: 0,
-  /** Export telemetry to Azure Monitor (Application Insights). */
-  AzureMonitor: 1,
-  /** Export telemetry to Agent365 observability service. */
-  Agent365: 2,
-  /** Export telemetry via OTLP (OpenTelemetry Protocol). */
-  Otlp: 4,
-  /** Export telemetry to console (development only). */
-  Console: 8,
-} as const;
-
-/** Bitwise combination of {@link ExportTarget} values. */
-export type ExportTargetFlags = number;
-
-/**
  * Microsoft OpenTelemetry Options
  *
  * Top-level configuration for the Microsoft OpenTelemetry distribution.
@@ -52,22 +22,6 @@ export type ExportTargetFlags = number;
  */
 export interface MicrosoftOpenTelemetryOptions {
   // ── Global options ────────────────────────────────────────────────
-
-  /**
-   * Selects which exporters to enable. Combine values with bitwise OR.
-   *
-   * When not set, exporters are auto-detected:
-   * - `AzureMonitor` — when `azureMonitor` options are provided with `enabled !== false`.
-   * - `Agent365` — when `a365.enabled` is true or `ENABLE_A365_OBSERVABILITY_EXPORTER=true`.
-   * - `Otlp` — when `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
-   * - `Console` — **never** auto-detected; must be explicitly set.
-   *
-   * Set explicitly to override auto-detection:
-   * ```ts
-   * exporters: ExportTarget.Console | ExportTarget.AzureMonitor
-   * ```
-   */
-  exporters?: ExportTargetFlags;
 
   /** OpenTelemetry Resource */
   resource?: Resource;
@@ -93,6 +47,9 @@ export interface MicrosoftOpenTelemetryOptions {
 
   /** A365 observability configuration. When provided with `enabled: true`, A365 export is enabled. */
   a365?: A365Options;
+
+  /** Enable console exporters for traces, metrics, and logs. Auto-enabled when no other exporter is active. */
+  enableConsoleExporters?: boolean;
 }
 
 /**

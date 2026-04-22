@@ -17,8 +17,6 @@ export type {
   BrowserSdkLoaderOptions,
   A365Options,
 } from "./distro/index.js";
-export { ExportTarget } from "./types.js";
-export type { ExportTargetFlags } from "./types.js";
 
 // ── Re-exports from A365 configuration ──────────────────────────────────────
 export { A365Configuration } from "./a365/index.js";
