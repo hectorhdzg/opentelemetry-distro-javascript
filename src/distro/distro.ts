@@ -6,8 +6,10 @@ import { logs } from "@opentelemetry/api-logs";
 import type { NodeSDKConfiguration } from "@opentelemetry/sdk-node";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import type { MetricReader, ViewOptions } from "@opentelemetry/sdk-metrics";
-import { type SpanProcessor, BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
+import { type SpanProcessor, BatchSpanProcessor, SimpleSpanProcessor, ConsoleSpanExporter } from "@opentelemetry/sdk-trace-base";
 import type { LogRecordProcessor } from "@opentelemetry/sdk-logs";
+import { SimpleLogRecordProcessor, ConsoleLogRecordExporter } from "@opentelemetry/sdk-logs";
+import { ConsoleMetricExporter, PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import type { Instrumentation } from "@opentelemetry/instrumentation";
 
 import { InternalConfig } from "../shared/config.js";
@@ -25,8 +27,8 @@ import {
   A365SpanProcessor,
   PerRequestSpanProcessor,
 } from "../a365/index.js";
-import type { MicrosoftOpenTelemetryOptions } from "../types.js";
-import { MICROSOFT_OPENTELEMETRY_VERSION } from "../types.js";
+import type { MicrosoftOpenTelemetryOptions, ExportTargetFlags } from "../types.js";
+import { MICROSOFT_OPENTELEMETRY_VERSION, ExportTarget } from "../types.js";
 
 process.env["AZURE_MONITOR_DISTRO_VERSION"] = AZURE_MONITOR_OPENTELEMETRY_VERSION;
 process.env["MICROSOFT_OPENTELEMETRY_VERSION"] = MICROSOFT_OPENTELEMETRY_VERSION;
@@ -42,6 +44,9 @@ let disposeAzureMonitor: (() => void) | undefined;
  * - Azure Monitor (enabled by default; disable with `options.azureMonitor.enabled = false`)
  * - OTLP HTTP (when `OTEL_EXPORTER_OTLP_ENDPOINT` is set)
  * - A365 (when `options.a365.enabled` is true or `ENABLE_A365_OBSERVABILITY_EXPORTER=true`)
+ * - Console (when `exporters` includes `ExportTarget.Console`; never auto-detected)
+ *
+ * When `options.exporters` is set, it overrides auto-detection for all backends.
  *
  * @param options - Microsoft OpenTelemetry configuration options
  */
@@ -49,7 +54,10 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
   const config = new InternalConfig(options);
   patchOpenTelemetryInstrumentationEnable();
 
-  const azureMonitorEnabled = options?.azureMonitor?.enabled !== false;
+  // ── Resolve export targets ────────────────────────────────────────
+  const exporters = resolveExportTargets(options);
+
+  const azureMonitorEnabled = !!(exporters & ExportTarget.AzureMonitor);
 
   // ── Azure Monitor components (statsbeat, browser SDK loader, etc.) ─
   disposeAzureMonitor = undefined;
@@ -102,8 +110,8 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
     ...(options?.metricReaders || []),
   ];
 
-  // ── OTLP HTTP exporters (enabled via OTEL_EXPORTER_OTLP_ENDPOINT) ─
-  if (isOtlpEnabled()) {
+  // ── OTLP HTTP exporters (enabled via exporters flag or OTEL_EXPORTER_OTLP_ENDPOINT) ─
+  if (exporters & ExportTarget.Otlp) {
     const otlp = createOtlpComponents();
     if (otlp.spanProcessor) {
       spanProcessors.push(otlp.spanProcessor);
@@ -116,24 +124,33 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
     }
   }
 
-  // ── A365 exporter (enabled via options.a365 or env vars) ──────────
-  const a365Config = new A365Configuration(options?.a365);
-  if (a365Config.enabled) {
-    const a365Exporter = new Agent365Exporter({
-      clusterCategory: a365Config.clusterCategory,
-      domainOverride: a365Config.domainOverride,
-      tokenResolver: a365Config.tokenResolver,
-    });
-    // A365SpanProcessor copies baggage (tenant, agent, session, etc.) to span attributes
-    if (a365Config.baggage.enrichSpans) {
-      spanProcessors.push(new A365SpanProcessor());
+  // ── A365 exporter (enabled via exporters flag, options.a365, or env vars) ──
+  if (exporters & ExportTarget.Agent365) {
+    const a365Config = new A365Configuration(options?.a365);
+    if (a365Config.enabled) {
+      const a365Exporter = new Agent365Exporter({
+        clusterCategory: a365Config.clusterCategory,
+        domainOverride: a365Config.domainOverride,
+        tokenResolver: a365Config.tokenResolver,
+      });
+      // A365SpanProcessor copies baggage (tenant, agent, session, etc.) to span attributes
+      if (a365Config.baggage.enrichSpans) {
+        spanProcessors.push(new A365SpanProcessor());
+      }
+      // PerRequestSpanProcessor buffers spans per trace and exports on root completion
+      // with the request's auth token; BatchSpanProcessor for standard batch export
+      const a365ExportProcessor = a365Config.perRequestExport
+        ? new PerRequestSpanProcessor(a365Exporter)
+        : new BatchSpanProcessor(a365Exporter);
+      spanProcessors.push(a365ExportProcessor);
     }
-    // PerRequestSpanProcessor buffers spans per trace and exports on root completion
-    // with the request's auth token; BatchSpanProcessor for standard batch export
-    const a365ExportProcessor = a365Config.perRequestExport
-      ? new PerRequestSpanProcessor(a365Exporter)
-      : new BatchSpanProcessor(a365Exporter);
-    spanProcessors.push(a365ExportProcessor);
+  }
+
+  // ── Console exporters (development only, never auto-detected) ─────
+  if (exporters & ExportTarget.Console) {
+    spanProcessors.push(new SimpleSpanProcessor(new ConsoleSpanExporter()));
+    metricReaders.push(new PeriodicExportingMetricReader({ exporter: new ConsoleMetricExporter() }));
+    logRecordProcessors.push(new SimpleLogRecordProcessor(new ConsoleLogRecordExporter()));
   }
 
   const views: ViewOptions[] = [...(metricHandler ? metricHandler.getViews() : []), ...customViews];
@@ -178,4 +195,41 @@ export function shutdownMicrosoftOpenTelemetry(): Promise<void> {
 
 export function _getSdkInstance(): NodeSDK | undefined {
   return sdk;
+}
+
+/**
+ * Resolves the effective export targets.
+ *
+ * When `options.exporters` is explicitly set, it is used as-is.
+ * Otherwise, auto-detection kicks in (matching the .NET distro behavior):
+ * - AzureMonitor — enabled when `azureMonitor.enabled !== false`
+ * - Agent365 — enabled when `a365.enabled` is true or `ENABLE_A365_OBSERVABILITY_EXPORTER=true`
+ * - Otlp — enabled when `OTEL_EXPORTER_OTLP_ENDPOINT` (or signal-specific variants) is set
+ * - Console — **never** auto-detected; must be explicitly set
+ *
+ * @internal
+ */
+function resolveExportTargets(options?: MicrosoftOpenTelemetryOptions): ExportTargetFlags {
+  if (options?.exporters !== undefined) {
+    return options.exporters;
+  }
+
+  // Auto-detect from configuration and environment
+  let targets: ExportTargetFlags = ExportTarget.None;
+
+  if (options?.azureMonitor?.enabled !== false) {
+    targets |= ExportTarget.AzureMonitor;
+  }
+
+  const a365Config = new A365Configuration(options?.a365);
+  if (a365Config.enabled) {
+    targets |= ExportTarget.Agent365;
+  }
+
+  if (isOtlpEnabled()) {
+    targets |= ExportTarget.Otlp;
+  }
+
+  // Console is never auto-detected — must be explicitly set via options.exporters
+  return targets;
 }
