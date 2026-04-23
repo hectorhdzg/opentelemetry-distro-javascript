@@ -35,7 +35,6 @@ function parseEnvBoolean(envValue: string | undefined): boolean | undefined {
  */
 export const A365_ENV_VARS = {
   EXPORTER_ENABLED: "ENABLE_A365_OBSERVABILITY_EXPORTER",
-  PER_REQUEST_EXPORT: "ENABLE_A365_OBSERVABILITY_PER_REQUEST_EXPORT",
   AUTH_SCOPES: "A365_OBSERVABILITY_SCOPES_OVERRIDE",
   DOMAIN: "A365_OBSERVABILITY_DOMAIN_OVERRIDE",
   CLUSTER_CATEGORY: "CLUSTER_CATEGORY",
@@ -82,9 +81,6 @@ export class A365Configuration {
   /** OAuth scopes for A365 service authentication. */
   public readonly authScopes: string[];
 
-  /** Whether to use per-request export mode. */
-  public readonly perRequestExport: boolean;
-
   /** Baggage options. */
   public readonly baggage: Required<A365BaggageOptions>;
 
@@ -97,24 +93,17 @@ export class A365Configuration {
     let clusterCategory: ClusterCategory = "prod";
     let domainOverride: string | undefined = options?.domainOverride;
     let authScopes: string[] = options?.authScopes ?? [DEFAULT_AUTH_SCOPE];
-    let perRequestExport = false;
 
     // 2. Apply programmatic options
     if (options) {
       enabled = options.enabled ?? enabled;
       clusterCategory = options.clusterCategory ?? clusterCategory;
-      perRequestExport = options.perRequestExport ?? perRequestExport;
     }
 
     // 3. Apply environment variable overrides (highest precedence)
     const envEnabled = parseEnvBoolean(process.env[A365_ENV_VARS.EXPORTER_ENABLED]);
     if (envEnabled !== undefined) {
       enabled = envEnabled;
-    }
-
-    const envPerRequest = parseEnvBoolean(process.env[A365_ENV_VARS.PER_REQUEST_EXPORT]);
-    if (envPerRequest !== undefined) {
-      perRequestExport = envPerRequest;
     }
 
     const envScopes = process.env[A365_ENV_VARS.AUTH_SCOPES]?.trim();
@@ -142,7 +131,6 @@ export class A365Configuration {
     this.clusterCategory = clusterCategory;
     this.domainOverride = domainOverride;
     this.authScopes = authScopes;
-    this.perRequestExport = perRequestExport;
 
     this.baggage = {
       propagationEnabled: options?.baggage?.propagationEnabled ?? true,
@@ -165,7 +153,6 @@ export class A365Configuration {
     const hasNonTrivialOptions =
       options.tokenResolver !== undefined ||
       options.domainOverride !== undefined ||
-      options.perRequestExport !== undefined ||
       options.hosting?.enabled === true;
 
     if (hasNonTrivialOptions) {
