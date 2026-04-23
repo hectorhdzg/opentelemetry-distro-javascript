@@ -141,8 +141,14 @@ describe("Library/Config", () => {
       assert.strictEqual(config.instrumentationOptions?.postgreSql?.enabled, false);
       assert.strictEqual(config.instrumentationOptions?.redis?.enabled, false);
       assert.strictEqual(config.instrumentationOptions?.redis4?.enabled, false);
-      assert.strictEqual(config.azureMonitorExporterOptions?.connectionString, "testConnStringOther");
-      assert.strictEqual(config.azureMonitorExporterOptions?.storageDirectory, "teststorageDirectoryOther");
+      assert.strictEqual(
+        config.azureMonitorExporterOptions?.connectionString,
+        "testConnStringOther",
+      );
+      assert.strictEqual(
+        config.azureMonitorExporterOptions?.storageDirectory,
+        "teststorageDirectoryOther",
+      );
       assert.strictEqual(config.azureMonitorExporterOptions?.disableOfflineStorage, false);
     });
 
@@ -252,15 +258,18 @@ describe("Library/Config", () => {
       assert.strictEqual(config.samplingRatio, 0);
     });
 
-    it("instrumentation key validation-valid key passed", () => {
-      new InternalConfig({
+    it("should merge azure monitor connection string from options", () => {
+      const config = new InternalConfig({
         azureMonitor: {
           azureMonitorExporterOptions: {
             connectionString: "InstrumentationKey=1aa11111-bbbb-1ccc-8ddd-eeeeffff3333",
           },
         },
       });
-      expect(warnStub).not.toHaveBeenCalled();
+      assert.strictEqual(
+        config.azureMonitorExporterOptions.connectionString,
+        "InstrumentationKey=1aa11111-bbbb-1ccc-8ddd-eeeeffff3333",
+      );
     });
 
     // TODO: these tests are incorrect on main
