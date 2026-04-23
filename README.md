@@ -104,7 +104,7 @@ useMicrosoftOpenTelemetry({
     http: { enabled: false },
     redis: { enabled: false },
 
-    // Explicitly enable GenAI instrumentations
+    // Enable GenAI instrumentations
     openaiAgents: {
       enabled: true,
       isContentRecordingEnabled: true,
@@ -151,8 +151,8 @@ useMicrosoftOpenTelemetry({
 Behavior:
 
 - `enableConsoleExporters: true`: always enable console exporters (traces, metrics, logs).
-- `enableConsoleExporters: false`: never auto-add console exporters.
-- Omitted: console exporters auto-enable only when no other exporter path is active.
+- `enableConsoleExporters: false`: do not auto-add the standard console exporters, except for the A365 span console fallback when `a365` options are provided but `a365.enabled` is `false` or omitted.
+- Omitted: console exporters auto-enable only when no other exporter path is active; if `a365` options are provided but `a365.enabled` is `false` or omitted, the A365 span console fallback can still be added.
 
 ### `azureMonitor` options
 
@@ -176,7 +176,7 @@ See the [OpenTelemetry OTLP Exporter specification](https://opentelemetry.io/doc
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | `boolean` | `false` | Enable A365 observability export |
-| `tokenResolver` | `(agentId, tenantId) => string \| Promise<string>` | — | Token resolver for A365 service authentication |
+| `tokenResolver` | `(agentId, tenantId, authScopes?) => string \| Promise<string>` | — | Token resolver for A365 service authentication |
 | `clusterCategory` | `ClusterCategory` | `"prod"` | Cluster category for endpoint resolution (`local`, `dev`, `test`, `preprod`, `firstrelease`, `prod`, `gov`, `high`, `dod`, `mooncake`, `ex`, `rx`) |
 | `domainOverride` | `string` | — | Override the A365 observability service domain |
 | `authScopes` | `string[]` | `["https://api.powerplatform.com/.default"]` | OAuth scopes for A365 service authentication |
@@ -196,6 +196,8 @@ See the [OpenTelemetry OTLP Exporter specification](https://opentelemetry.io/doc
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | `boolean` | `false` | Enable hosting middleware integration (baggage middleware, output logging, etc.) |
+| `adapter` | `{ use(...middlewares): void }` | — | Adapter instance where middleware is auto-registered when `enabled` is true |
+| `enableOutputLogging` | `boolean` | `true` | Enable output logging middleware auto-registration |
 
 #### A365 environment variables
 

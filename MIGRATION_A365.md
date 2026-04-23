@@ -145,14 +145,14 @@ All A365 observability options are available through `a365`:
 | Option | Type | Default | Notes |
 |---|---|---|---|
 | `enabled` | `boolean` | `false` | Enables A365 exporter path |
-| `tokenResolver` | `(agentId, tenantId) => string \| Promise<string>` | — | Required when exporting to A365 |
+| `tokenResolver` | `(agentId, tenantId, authScopes?) => string \| Promise<string>` | — | Required when exporting to A365 |
 | `clusterCategory` | `ClusterCategory` | `"prod"` | Same category values as Agent365-nodejs |
-| `domainOverride` | `string` | — | Optional endpoint override |
-| `authScopes` | `string[]` | `["https://api.powerplatform.com/.default"]` | Optional OAuth scopes override |
+| `domainOverride` | `string` | — | Optional endpoint override (applied by exporter) |
+| `authScopes` | `string[]` | `["https://api.powerplatform.com/.default"]` | Passed to `tokenResolver` as the third argument |
 | `perRequestExport` | `boolean` | `false` | Export per trace when root span completes |
-| `baggage.propagationEnabled` | `boolean` | `true` | Read baggage from incoming headers |
-| `baggage.enrichSpans` | `boolean` | `true` | Copy baggage values onto span attributes |
-| `hosting.enabled` | `boolean` | `false` | Turns on hosting middleware integration |
+| `baggage.propagationEnabled` | `boolean` | `true` | Controls baggage middleware auto-registration when hosting is enabled |
+| `baggage.enrichSpans` | `boolean` | `true` | Copy baggage values onto span attributes via `A365SpanProcessor` |
+| `hosting.enabled` | `boolean` | `false` | Enables hosting middleware auto-registration when `hosting.adapter` is provided |
 
 ## Environment Variables
 

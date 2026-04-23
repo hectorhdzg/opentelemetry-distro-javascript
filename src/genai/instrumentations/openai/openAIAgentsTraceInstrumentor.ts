@@ -48,7 +48,10 @@ class OpenAIAgentsTraceInstrumentorImpl extends InstrumentationBase<OpenAIAgents
       ...config,
     });
 
-    this.otelTracer = trace.getTracer("microsoft-otel-openai-agents", "1.0.0");
+    this.otelTracer = trace.getTracer(
+      config.tracerName ?? "microsoft-otel-openai-agents",
+      config.tracerVersion ?? "1.0.0",
+    );
 
     OpenAIAgentsTraceInstrumentorImpl._instance = this;
     diag.info("[OpenAIAgentsTraceInstrumentor] Initialized");

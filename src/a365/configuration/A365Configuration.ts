@@ -5,7 +5,6 @@ import type {
   A365Options,
   ClusterCategory,
   A365BaggageOptions,
-  A365HostingOptions,
 } from "./A365ConfigurationOptions.js";
 import { Logger } from "../../shared/logging/index.js";
 import { JsonConfig } from "../../shared/jsonConfig.js";
@@ -73,7 +72,11 @@ export class A365Configuration {
   public readonly enabled: boolean;
 
   /** Token resolver callback for A365 service authentication. */
-  public readonly tokenResolver?: (agentId: string, tenantId: string) => string | Promise<string>;
+  public readonly tokenResolver?: (
+    agentId: string,
+    tenantId: string,
+    authScopes?: string[],
+  ) => string | Promise<string>;
 
   /** Cluster category. */
   public readonly clusterCategory: ClusterCategory;
@@ -91,7 +94,11 @@ export class A365Configuration {
   public readonly baggage: Required<A365BaggageOptions>;
 
   /** Hosting options. */
-  public readonly hosting: Required<A365HostingOptions>;
+  public readonly hosting: {
+    enabled: boolean;
+    adapter?: { use(...middlewares: unknown[]): void };
+    enableOutputLogging: boolean;
+  };
 
   constructor(options?: A365Options) {
     // 1. Set defaults
@@ -166,6 +173,9 @@ export class A365Configuration {
 
     this.hosting = {
       enabled: jsonA365?.hosting?.enabled ?? options?.hosting?.enabled ?? false,
+      adapter: jsonA365?.hosting?.adapter ?? options?.hosting?.adapter,
+      enableOutputLogging:
+        jsonA365?.hosting?.enableOutputLogging ?? options?.hosting?.enableOutputLogging ?? true,
     };
 
     // Warn when A365-scoped options are set but A365 is not enabled
