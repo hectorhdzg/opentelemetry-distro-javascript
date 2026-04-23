@@ -139,7 +139,9 @@ Environment variable names are **unchanged** from Agent365-nodejs:
 
 ## Custom Span Export
 
-If your previous setup used `perRequestExport: true` (buffering spans per trace before exporting), you can replicate that behavior with a custom `SpanProcessor` paired with the exported `Agent365Exporter`:
+If your previous setup used `perRequestExport: true` (buffering spans per trace and exporting when a trace completes), use a custom `SpanProcessor` with the exported `Agent365Exporter`.
+`BatchSpanProcessor` and `SimpleSpanProcessor` are supported, but they change export timing compared to the removed per-request behavior.
+To keep equivalent timing semantics, implement a custom span processor.
 
 ```typescript
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
@@ -150,8 +152,13 @@ const exporter = new Agent365Exporter({
   tokenResolver: async (agentId, tenantId) => getToken(agentId, tenantId),
 });
 
-// Supply any OTel-compatible SpanProcessor wrapping Agent365Exporter
+// Disable built-in A365 exporter to avoid double exporting when using custom processors.
+process.env.ENABLE_A365_OBSERVABILITY_EXPORTER = "false";
+
+// Supply any OTel-compatible SpanProcessor wrapping Agent365Exporter.
+// Note: BatchSpanProcessor does not export on root-span completion.
 useMicrosoftOpenTelemetry({
+  a365: { enabled: false },
   spanProcessors: [new BatchSpanProcessor(exporter)],
 });
 ```
