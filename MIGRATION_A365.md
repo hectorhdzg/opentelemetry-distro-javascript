@@ -88,7 +88,6 @@ All public APIs are re-exported from the root `@microsoft/opentelemetry` package
 | `@microsoft/agents-a365-observability` | `@microsoft/opentelemetry` | Notes |
 |---|---|---|
 | `SpanProcessor` (from `processors/`) | `A365SpanProcessor` | Renamed to avoid collision with OTel `SpanProcessor` |
-| `PerRequestSpanProcessor` | `PerRequestSpanProcessor` | Same name |
 
 ## Initialization
 
@@ -102,7 +101,6 @@ import { Builder } from "@microsoft/agents-a365-observability";
 const manager = new Builder({
   tokenResolver: async (agentId, tenantId) => getToken(agentId, tenantId),
   clusterCategory: "prod",
-  perRequestExport: true,
 }).build();
 ```
 
@@ -118,16 +116,6 @@ useMicrosoftOpenTelemetry({
     enabled: true,
     tokenResolver: async (agentId, tenantId) => getToken(agentId, tenantId),
     clusterCategory: "prod",
-    perRequestExport: true,
-    domainOverride: "custom.a365.example.com", // optional
-    authScopes: ["https://api.powerplatform.com/.default"], // optional
-    baggage: {
-      propagationEnabled: true,
-      enrichSpans: true,
-    },
-    hosting: {
-      enabled: true, // requires @microsoft/agents-hosting
-    },
   },
   // Optional: also send to Azure Monitor
   azureMonitor: {
@@ -161,15 +149,39 @@ Environment variable names are **unchanged** from Agent365-nodejs:
 | Environment Variable | Description |
 |---|---|
 | `ENABLE_A365_OBSERVABILITY_EXPORTER` | Enable/disable A365 exporter (`true`, `1`, `yes`, `on`) |
-| `ENABLE_A365_OBSERVABILITY_PER_REQUEST_EXPORT` | Enable/disable per-request export mode |
 | `A365_OBSERVABILITY_SCOPES_OVERRIDE` | Space-separated list of OAuth scopes |
 | `A365_OBSERVABILITY_DOMAIN_OVERRIDE` | Override service domain |
 | `CLUSTER_CATEGORY` | Cluster category (`prod`, `dev`, `test`, etc.) |
-| `A365_PER_REQUEST_MAX_TRACES` | Max buffered traces (default: `1000`) |
-| `A365_PER_REQUEST_MAX_SPANS_PER_TRACE` | Max spans per trace (default: `5000`) |
-| `A365_PER_REQUEST_MAX_CONCURRENT_EXPORTS` | Max concurrent exports (default: `20`) |
-| `A365_PER_REQUEST_FLUSH_GRACE_MS` | Grace period after root span ends (default: `250`) |
-| `A365_PER_REQUEST_MAX_TRACE_AGE_MS` | Max trace age before forced flush (default: `1800000`) |
+
+## Custom Span Export
+
+If your previous setup used `perRequestExport: true` (buffering spans per trace and exporting when a trace completes), use a custom `SpanProcessor` with the exported `Agent365Exporter`.
+`BatchSpanProcessor` and `SimpleSpanProcessor` are supported, but they change export timing compared to the removed per-request behavior.
+To keep equivalent timing semantics, implement a custom span processor.
+
+```typescript
+import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
+import { useMicrosoftOpenTelemetry, Agent365Exporter } from "@microsoft/opentelemetry";
+
+const exporter = new Agent365Exporter({
+  clusterCategory: "prod",
+  tokenResolver: async (agentId, tenantId) => getToken(agentId, tenantId),
+});
+
+// Disable built-in A365 exporter to avoid double exporting when using custom processors.
+process.env.ENABLE_A365_OBSERVABILITY_EXPORTER = "false";
+
+// Supply any OTel-compatible SpanProcessor wrapping Agent365Exporter.
+// Note: BatchSpanProcessor does not export on root-span completion.
+useMicrosoftOpenTelemetry({
+  a365: { enabled: false },
+  spanProcessors: [new BatchSpanProcessor(exporter)],
+});
+```
+
+> **Note:** `Agent365Exporter` is a standard `SpanExporter`. You can wrap it with any
+> `SpanProcessor` from `@opentelemetry/sdk-trace-base` (e.g. `BatchSpanProcessor`,
+> `SimpleSpanProcessor`) or a custom implementation.
 
 ### Logging Level Configuration
 

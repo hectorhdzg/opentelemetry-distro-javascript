@@ -29,19 +29,8 @@ import {
   validateAzureMonitorConfig,
 } from "../azureMonitor/index.js";
 import { isOtlpEnabled, createOtlpComponents } from "../otlp/index.js";
-import {
-  A365Configuration,
-  Agent365Exporter,
-  A365SpanProcessor,
-  PerRequestSpanProcessor,
-  ObservabilityHostingManager,
-} from "../a365/index.js";
-import type {
-  MicrosoftOpenTelemetryOptions,
-  InstrumentationOptions,
-  OpenAIAgentsInstrumentationConfig,
-  LangChainInstrumentationConfig,
-} from "../types.js";
+import { A365Configuration, Agent365Exporter, A365SpanProcessor } from "../a365/index.js";
+import type { MicrosoftOpenTelemetryOptions } from "../types.js";
 import { MICROSOFT_OPENTELEMETRY_VERSION } from "../types.js";
 import { createInstrumentations, createSampler, createViews } from "./instrumentations.js";
 import { Logger } from "../shared/logging/index.js";
@@ -161,27 +150,7 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
     if (a365Config.baggage.enrichSpans) {
       spanProcessors.push(new A365SpanProcessor());
     }
-    // PerRequestSpanProcessor buffers spans per trace and exports on root completion
-    // with the request's auth token; BatchSpanProcessor for standard batch export
-    const a365ExportProcessor = a365Config.perRequestExport
-      ? new PerRequestSpanProcessor(a365Exporter)
-      : new BatchSpanProcessor(a365Exporter);
-    spanProcessors.push(a365ExportProcessor);
-
-    if (a365Config.hosting.enabled) {
-      if (a365Config.hosting.adapter) {
-        const hostingManager = new ObservabilityHostingManager();
-        hostingManager.configure(a365Config.hosting.adapter, {
-          enableBaggage: a365Config.baggage.propagationEnabled,
-          enableOutputLogging: a365Config.hosting.enableOutputLogging,
-        });
-      } else {
-        Logger.getInstance().warn(
-          "[A365] hosting.enabled is true but no hosting.adapter was provided. " +
-            "Pass a365.hosting.adapter to auto-register middleware.",
-        );
-      }
-    }
+    spanProcessors.push(new BatchSpanProcessor(a365Exporter));
   } else if (a365ConsoleExportFallback) {
     // A365 options provided but exporter disabled — fall back to console export
     // so developers can validate spans locally (matches upstream A365 SDK behavior

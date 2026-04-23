@@ -6,13 +6,8 @@
 - Remove Azure Functions auto-instrumentation support from this package. The `instrumentationOptions.azureFunctions` option is no longer available.
 - Remove JSON configuration support (`applicationinsights.json`, `APPLICATIONINSIGHTS_CONFIGURATION_FILE`, and `APPLICATIONINSIGHTS_CONFIGURATION_CONTENT`). Configuration now comes only from programmatic options and environment variables.
 
-### Features Added
-- Wire GenAI instrumentation options into distro initialization (`openaiAgents`, `langchain`) with lifecycle cleanup on shutdown. ([#44](https://github.com/microsoft/opentelemetry-distro-javascript/pull/44))
-- Connect A365 configuration to runtime behavior: pass `authScopes` into token resolution and auto-register hosting middleware when `hosting.enabled` and `hosting.adapter` are provided. ([#44](https://github.com/microsoft/opentelemetry-distro-javascript/pull/44))
-
 ### Bugs Fixed
 - Prevent ESM/CJS interop regressions by removing the problematic Azure Functions instrumentation path and adding explicit built-ESM import regression coverage.
-- Eliminate configuration no-ops by wiring `tracerName` / `tracerVersion` into OpenAI tracer initialization and aligning docs with actual runtime behavior. ([#44](https://github.com/microsoft/opentelemetry-distro-javascript/pull/44))
 - Remove startup noise caused by implicit JSON config file probing in the Microsoft distro.
 
 ### Other Changes
@@ -20,7 +15,12 @@
 
 ## [0.1.0-alpha.4] - 2026-04-22
 
+### Breaking Changes
+- Remove `PerRequestSpanProcessor` and its `PerRequestSpanProcessorOptions` from the public API. The `perRequestExport` option on `A365Options` and the `ENABLE_A365_OBSERVABILITY_PER_REQUEST_EXPORT` environment variable have also been removed. ([#40](https://github.com/microsoft/opentelemetry-distro-javascript/pull/40))
+  - **Migration:** If you were relying on per-request export behaviour, use the now-public `Agent365Exporter` together with any OTel-compatible `SpanProcessor`. See the [migration guide](./MIGRATION_A365.md#custom-span-export) for an example.
+
 ### Features Added
+- Export `Agent365Exporter`, `Agent365ExporterOptions`, and `TokenResolver` as public API to enable custom span processor configurations. ([#40](https://github.com/microsoft/opentelemetry-distro-javascript/pull/40))
 - Add console exporter ([#35](https://github.com/microsoft/opentelemetry-distro-javascript/pull/35))
 - Conditional azure monitor and readme updates ([#33](https://github.com/microsoft/opentelemetry-distro-javascript/pull/33))
 - Add a365 hosting middleware ([#29](https://github.com/microsoft/opentelemetry-distro-javascript/pull/29))
