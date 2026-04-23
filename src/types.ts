@@ -105,10 +105,10 @@ export interface InstrumentationOptions {
 
   /**
    * OpenAI Agents SDK instrumentation.
-    * Uses InstrumentationConfig shape (`enabled`, etc.) plus OpenAI-specific options.
+   * Uses InstrumentationConfig shape (`enabled`, etc.) plus OpenAI-specific options.
    * Requires `@openai/agents` as an optional peer dependency.
    */
-    openaiAgents?: OpenAIAgentsInstrumentationConfig;
+  openaiAgents?: OpenAIAgentsInstrumentationConfig;
 
   /**
    * LangChain instrumentation.
