@@ -7,7 +7,6 @@ import type {
   A365BaggageOptions,
 } from "./A365ConfigurationOptions.js";
 import { Logger } from "../../shared/logging/index.js";
-import { JsonConfig } from "../../shared/jsonConfig.js";
 
 /**
  * Parse an environment variable as a boolean.
@@ -61,11 +60,10 @@ const VALID_CLUSTER_CATEGORIES: ReadonlySet<string> = new Set([
 /**
  * Resolved A365 configuration.
  *
- * Merges values from four sources (lowest to highest precedence):
+ * Merges values from three sources (lowest to highest precedence):
  *   1. Defaults
  *   2. Programmatic options (`A365Options`)
- *   3. JSON config (`applicationinsights.json` → `a365` key)
- *   4. Environment variables (see `A365_ENV_VARS`)
+ *   3. Environment variables (see `A365_ENV_VARS`)
  */
 export class A365Configuration {
   /** Whether A365 observability is enabled. */
@@ -115,19 +113,7 @@ export class A365Configuration {
       perRequestExport = options.perRequestExport ?? perRequestExport;
     }
 
-    // 3. Apply JSON config (takes precedence over programmatic options)
-    const jsonA365 = JsonConfig.getInstance().a365;
-    if (jsonA365) {
-      enabled = jsonA365.enabled ?? enabled;
-      clusterCategory = jsonA365.clusterCategory ?? clusterCategory;
-      domainOverride = jsonA365.domainOverride ?? domainOverride;
-      perRequestExport = jsonA365.perRequestExport ?? perRequestExport;
-      if (jsonA365.authScopes) {
-        authScopes = jsonA365.authScopes;
-      }
-    }
-
-    // 4. Apply environment variable overrides (highest precedence)
+    // 3. Apply environment variable overrides (highest precedence)
     const envEnabled = parseEnvBoolean(process.env[A365_ENV_VARS.EXPORTER_ENABLED]);
     if (envEnabled !== undefined) {
       enabled = envEnabled;
@@ -166,16 +152,14 @@ export class A365Configuration {
     this.perRequestExport = perRequestExport;
 
     this.baggage = {
-      propagationEnabled:
-        jsonA365?.baggage?.propagationEnabled ?? options?.baggage?.propagationEnabled ?? true,
-      enrichSpans: jsonA365?.baggage?.enrichSpans ?? options?.baggage?.enrichSpans ?? true,
+      propagationEnabled: options?.baggage?.propagationEnabled ?? true,
+      enrichSpans: options?.baggage?.enrichSpans ?? true,
     };
 
     this.hosting = {
-      enabled: jsonA365?.hosting?.enabled ?? options?.hosting?.enabled ?? false,
-      adapter: jsonA365?.hosting?.adapter ?? options?.hosting?.adapter,
-      enableOutputLogging:
-        jsonA365?.hosting?.enableOutputLogging ?? options?.hosting?.enableOutputLogging ?? true,
+      enabled: options?.hosting?.enabled ?? false,
+      adapter: options?.hosting?.adapter,
+      enableOutputLogging: options?.hosting?.enableOutputLogging ?? true,
     };
 
     // Warn when A365-scoped options are set but A365 is not enabled
