@@ -30,17 +30,6 @@ describe("A365Configuration", () => {
       assert.deepStrictEqual(config.authScopes, ["https://api.powerplatform.com/.default"]);
       assert.strictEqual(config.tokenResolver, undefined);
     });
-
-    it("should have correct default baggage options", () => {
-      const config = new A365Configuration();
-      assert.strictEqual(config.baggage.propagationEnabled, true);
-      assert.strictEqual(config.baggage.enrichSpans, true);
-    });
-
-    it("should have correct default hosting options", () => {
-      const config = new A365Configuration();
-      assert.strictEqual(config.hosting.enabled, false);
-    });
   });
 
   describe("programmatic options", () => {
@@ -69,19 +58,6 @@ describe("A365Configuration", () => {
       const resolver = (_agentId: string, _tenantId: string) => "token";
       const config = new A365Configuration({ tokenResolver: resolver });
       assert.strictEqual(config.tokenResolver, resolver);
-    });
-
-    it("should apply baggage options", () => {
-      const config = new A365Configuration({
-        baggage: { propagationEnabled: false, enrichSpans: false },
-      });
-      assert.strictEqual(config.baggage.propagationEnabled, false);
-      assert.strictEqual(config.baggage.enrichSpans, false);
-    });
-
-    it("should apply hosting options", () => {
-      const config = new A365Configuration({ hosting: { enabled: true } });
-      assert.strictEqual(config.hosting.enabled, true);
     });
   });
 

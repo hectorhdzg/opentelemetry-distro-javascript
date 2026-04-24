@@ -179,23 +179,6 @@ See the [OpenTelemetry OTLP Exporter specification](https://opentelemetry.io/doc
 | `clusterCategory` | `ClusterCategory` | `"prod"` | Cluster category for endpoint resolution (`local`, `dev`, `test`, `preprod`, `firstrelease`, `prod`, `gov`, `high`, `dod`, `mooncake`, `ex`, `rx`) |
 | `domainOverride` | `string` | — | Override the A365 observability service domain |
 | `authScopes` | `string[]` | `["https://api.powerplatform.com/.default"]` | OAuth scopes for A365 service authentication |
-| `baggage` | `A365BaggageOptions` | see below | Baggage propagation and span enrichment options |
-| `hosting` | `A365HostingOptions` | see below | Hosting middleware options (requires `@microsoft/agents-hosting`) |
-
-#### `a365.baggage` options
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `propagationEnabled` | `boolean` | `true` | Enable baggage propagation from request headers to span context |
-| `enrichSpans` | `boolean` | `true` | Copy baggage items (tenant, agent, session, etc.) to span attributes |
-
-#### `a365.hosting` options
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `enabled` | `boolean` | `false` | Enable hosting middleware integration (baggage middleware, output logging, etc.) |
-| `adapter` | `{ use(...middlewares): void }` | — | Adapter instance where middleware is auto-registered when `enabled` is true |
-| `enableOutputLogging` | `boolean` | `true` | Enable output logging middleware auto-registration |
 
 
 | `httpRequestTimeoutMilliseconds` | `number` | `30000` | HTTP request timeout (ms) when sending spans to A365 service |

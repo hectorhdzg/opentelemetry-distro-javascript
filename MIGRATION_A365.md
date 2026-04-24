@@ -137,10 +137,6 @@ All A365 observability options are available through `a365`:
 | `clusterCategory` | `ClusterCategory` | `"prod"` | Same category values as Agent365-nodejs |
 | `domainOverride` | `string` | — | Optional endpoint override (applied by exporter) |
 | `authScopes` | `string[]` | `["https://api.powerplatform.com/.default"]` | Passed to `tokenResolver` as the third argument |
-| `perRequestExport` | `boolean` | `false` | Export per trace when root span completes |
-| `baggage.propagationEnabled` | `boolean` | `true` | Controls baggage middleware auto-registration when hosting is enabled |
-| `baggage.enrichSpans` | `boolean` | `true` | Copy baggage values onto span attributes via `A365SpanProcessor` |
-| `hosting.enabled` | `boolean` | `false` | Enables hosting middleware auto-registration when `hosting.adapter` is provided |
 
 ## Environment Variables
 
