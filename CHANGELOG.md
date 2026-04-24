@@ -1,17 +1,19 @@
 # Release History
 
-## [Unreleased]
+## [0.1.0-alpha.5] - 2026-04-23
 
 ### Breaking Changes
-- Remove Azure Functions auto-instrumentation support from this package. The `instrumentationOptions.azureFunctions` option is no longer available.
-- Remove JSON configuration support (`applicationinsights.json`, `APPLICATIONINSIGHTS_CONFIGURATION_FILE`, and `APPLICATIONINSIGHTS_CONFIGURATION_CONTENT`). Configuration now comes only from programmatic options and environment variables.
+- Remove Azure Functions auto-instrumentation support from this package. The `instrumentationOptions.azureFunctions` option is no longer available. ([#45](https://github.com/microsoft/opentelemetry-distro-javascript/pull/45))
+- Remove JSON configuration support (`applicationinsights.json`, `APPLICATIONINSIGHTS_CONFIGURATION_FILE`, and `APPLICATIONINSIGHTS_CONFIGURATION_CONTENT`). Configuration now comes only from programmatic options and environment variables. ([#49](https://github.com/microsoft/opentelemetry-distro-javascript/pull/49))
+- Remove `PerRequestSpanProcessor` and `PerRequestSpanProcessorOptions` from the public API. ([#47](https://github.com/microsoft/opentelemetry-distro-javascript/pull/47))
 
 ### Bugs Fixed
-- Prevent ESM/CJS interop regressions by removing the problematic Azure Functions instrumentation path and adding explicit built-ESM import regression coverage.
-- Remove startup noise caused by implicit JSON config file probing in the Microsoft distro.
+- Prevent ESM/CJS interop regressions by removing the problematic Azure Functions instrumentation path and adding explicit built-ESM import regression coverage. ([#45](https://github.com/microsoft/opentelemetry-distro-javascript/pull/45))
+- Remove startup noise caused by implicit JSON config file probing in the Microsoft distro. ([#49](https://github.com/microsoft/opentelemetry-distro-javascript/pull/49))
 
 ### Other Changes
-- Expand PR validation checks to run unit tests, functional tests, and a built ESM import smoke test.
+- Expand PR validation checks to run unit tests, functional tests, and a built ESM import smoke test. ([#45](https://github.com/microsoft/opentelemetry-distro-javascript/pull/45))
+- Bump hono from 4.12.12 to 4.12.14. ([#19](https://github.com/microsoft/opentelemetry-distro-javascript/pull/19))
 
 ## [0.1.0-alpha.4] - 2026-04-22
 
