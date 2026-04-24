@@ -8,7 +8,7 @@ import {
   SimpleSpanProcessor,
   BasicTracerProvider,
 } from "@opentelemetry/sdk-trace-base";
-import { trace } from "@opentelemetry/api";
+import { trace, type ProxyTracerProvider } from "@opentelemetry/api";
 import { useMicrosoftOpenTelemetry, shutdownMicrosoftOpenTelemetry } from "../../../src/index.js";
 import { LangChainTraceInstrumentor } from "../../../src/genai/instrumentations/langchain/langchainTraceInstrumentor.js";
 import { ATTR_GEN_AI_OPERATION_NAME, GEN_AI_OPERATION_CHAT } from "../../../src/genai/index.js";
@@ -51,16 +51,20 @@ function makeLangChainRun(overrides: Record<string, unknown> = {}): Record<strin
 }
 
 async function flushGlobalTracerProvider(): Promise<void> {
-  const provider = (trace.getTracerProvider() as any).getDelegate?.() as BasicTracerProvider;
-  await provider?.forceFlush?.();
+  const provider = (
+    trace.getTracerProvider() as ProxyTracerProvider
+  ).getDelegate() as BasicTracerProvider;
+  await provider.forceFlush();
 }
 
 describe("GenAI distro integration", () => {
   const exporter = new InMemorySpanExporter();
+  const originalConfigureSync = (CallbackManager as any)._configureSync;
 
   afterEach(async () => {
     await shutdownMicrosoftOpenTelemetry().catch(() => {});
     exporter.reset();
+    (CallbackManager as any)._configureSync = originalConfigureSync;
     // Explicit reset keeps singleton instrumentors from leaking across tests.
     LangChainTraceInstrumentor.resetInstance();
     vi.restoreAllMocks();

@@ -7,15 +7,17 @@ import {
   SimpleSpanProcessor,
   BasicTracerProvider,
 } from "@opentelemetry/sdk-trace-base";
-import { trace } from "@opentelemetry/api";
+import { trace, type ProxyTracerProvider } from "@opentelemetry/api";
 import * as OpenAIAgents from "@openai/agents";
 import { useMicrosoftOpenTelemetry, shutdownMicrosoftOpenTelemetry } from "../../../src/index.js";
 import { OpenAIAgentsTraceInstrumentor } from "../../../src/genai/instrumentations/openai/openAIAgentsTraceInstrumentor.js";
 import { ATTR_GEN_AI_OPERATION_NAME, GEN_AI_OPERATION_CHAT } from "../../../src/genai/index.js";
 
 async function flushGlobalTracerProvider(): Promise<void> {
-  const provider = (trace.getTracerProvider() as any).getDelegate?.() as BasicTracerProvider;
-  await provider?.forceFlush?.();
+  const provider = (
+    trace.getTracerProvider() as ProxyTracerProvider
+  ).getDelegate() as BasicTracerProvider;
+  await provider.forceFlush();
 }
 
 describe("OpenAI Agents distro integration", () => {
@@ -24,6 +26,11 @@ describe("OpenAI Agents distro integration", () => {
   afterEach(async () => {
     await shutdownMicrosoftOpenTelemetry().catch(() => {});
     exporter.reset();
+    try {
+      OpenAIAgentsTraceInstrumentor.disable();
+    } catch {
+      // Best-effort teardown: disable may fail if the instrumentor was never enabled.
+    }
     OpenAIAgentsTraceInstrumentor.resetInstance();
     vi.restoreAllMocks();
   });
