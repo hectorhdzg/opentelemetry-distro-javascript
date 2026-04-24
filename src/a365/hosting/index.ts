@@ -19,6 +19,11 @@ export {
 } from "./outputLoggingMiddleware.js";
 export { ObservabilityHostingManager } from "./observabilityHostingManager.js";
 export type { ObservabilityHostingOptions } from "./observabilityHostingManager.js";
+export {
+  AgenticTokenCache,
+  AgenticTokenCacheInstance,
+} from "./agenticTokenCache.js";
+export type { AuthorizationLike, AgenticTokenCacheOptions } from "./agenticTokenCache.js";
 export type {
   TurnContextLike,
   ActivityLike,
