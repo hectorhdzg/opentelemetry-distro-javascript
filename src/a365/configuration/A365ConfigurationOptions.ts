@@ -1,8 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import type { Agent365ExporterOptions } from "../exporter/Agent365ExporterOptions.js";
-import type { ILogger } from "../logging.js";
+
 
 /**
  * Cluster categories for A365 service endpoint resolution.

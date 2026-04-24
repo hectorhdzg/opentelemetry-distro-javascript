@@ -6,7 +6,7 @@ import {
   A365Configuration,
   A365_ENV_VARS,
 } from "../../../../src/a365/configuration/A365Configuration.js";
-import { _resetA365LoggerForTest, getA365Logger } from "../../../../src/a365/logging.js";
+import { _resetA365LoggerForTest } from "../../../../src/a365/logging.js";
 
 describe("A365Configuration", () => {
   let originalEnv: NodeJS.ProcessEnv;

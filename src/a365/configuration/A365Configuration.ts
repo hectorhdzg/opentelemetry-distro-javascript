@@ -7,8 +7,7 @@ import type {
   A365BaggageOptions,
   A365HostingOptions,
 } from "./A365ConfigurationOptions.js";
-import type { ILogger } from "../logging.js";
-import { configureA365Logger, getA365Logger } from "../logging.js";
+import { getA365Logger } from "../logging.js";
 
 /**
  * Parse an environment variable as a boolean.

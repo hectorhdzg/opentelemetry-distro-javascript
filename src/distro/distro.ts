@@ -5,7 +5,6 @@ import { metrics, trace } from "@opentelemetry/api";
 import { logs } from "@opentelemetry/api-logs";
 import type { NodeSDKConfiguration } from "@opentelemetry/sdk-node";
 import { NodeSDK } from "@opentelemetry/sdk-node";
-import { resourceFromAttributes } from "@opentelemetry/resources";
 import type { MetricReader, ViewOptions } from "@opentelemetry/sdk-metrics";
 import {
   type SpanProcessor,
