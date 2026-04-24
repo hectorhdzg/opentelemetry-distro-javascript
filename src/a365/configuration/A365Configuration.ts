@@ -5,9 +5,8 @@ import type {
   A365Options,
   ClusterCategory,
   A365BaggageOptions,
-  A365HostingOptions,
 } from "./A365ConfigurationOptions.js";
-import { Logger } from "../../shared/logging/index.js";
+import { getA365Logger } from "../logging.js";
 
 /**
  * Parse an environment variable as a boolean.
@@ -38,6 +37,7 @@ export const A365_ENV_VARS = {
   AUTH_SCOPES: "A365_OBSERVABILITY_SCOPES_OVERRIDE",
   DOMAIN: "A365_OBSERVABILITY_DOMAIN_OVERRIDE",
   CLUSTER_CATEGORY: "CLUSTER_CATEGORY",
+  LOG_LEVEL: "A365_OBSERVABILITY_LOG_LEVEL",
 } as const;
 
 const DEFAULT_AUTH_SCOPE = "https://api.powerplatform.com/.default";
@@ -70,7 +70,11 @@ export class A365Configuration {
   public readonly enabled: boolean;
 
   /** Token resolver callback for A365 service authentication. */
-  public readonly tokenResolver?: (agentId: string, tenantId: string) => string | Promise<string>;
+  public readonly tokenResolver?: (
+    agentId: string,
+    tenantId: string,
+    authScopes?: string[],
+  ) => string | Promise<string>;
 
   /** Cluster category. */
   public readonly clusterCategory: ClusterCategory;
@@ -85,7 +89,11 @@ export class A365Configuration {
   public readonly baggage: Required<A365BaggageOptions>;
 
   /** Hosting options. */
-  public readonly hosting: Required<A365HostingOptions>;
+  public readonly hosting: {
+    enabled: boolean;
+    adapter?: { use(...middlewares: unknown[]): void };
+    enableOutputLogging: boolean;
+  };
 
   constructor(options?: A365Options) {
     // 1. Set defaults
@@ -120,7 +128,7 @@ export class A365Configuration {
     if (envCluster && VALID_CLUSTER_CATEGORIES.has(envCluster)) {
       clusterCategory = envCluster as ClusterCategory;
     } else if (envCluster) {
-      Logger.getInstance().warn(
+      getA365Logger().warn(
         `Invalid ${A365_ENV_VARS.CLUSTER_CATEGORY} value '${envCluster}'. Using default cluster category.`,
       );
     }
@@ -139,6 +147,8 @@ export class A365Configuration {
 
     this.hosting = {
       enabled: options?.hosting?.enabled ?? false,
+      adapter: options?.hosting?.adapter,
+      enableOutputLogging: options?.hosting?.enableOutputLogging ?? true,
     };
 
     // Warn when A365-scoped options are set but A365 is not enabled
@@ -156,7 +166,7 @@ export class A365Configuration {
       options.hosting?.enabled === true;
 
     if (hasNonTrivialOptions) {
-      Logger.getInstance().warn(
+      getA365Logger().warn(
         "A365 configuration options are set but A365 is not enabled. " +
           "Set `a365.enabled: true` or `ENABLE_A365_OBSERVABILITY_EXPORTER=true` to enable.",
       );
