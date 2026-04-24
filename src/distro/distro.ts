@@ -30,6 +30,7 @@ import {
 } from "../azureMonitor/index.js";
 import { isOtlpEnabled, createOtlpComponents } from "../otlp/index.js";
 import { A365Configuration, Agent365Exporter, A365SpanProcessor } from "../a365/index.js";
+import { resolveInternalPerRequestOptions } from "../a365/configuration/internalPerRequest.js";
 import { PerRequestSpanProcessor } from "../a365/processors/PerRequestSpanProcessor.js";
 import type {
   MicrosoftOpenTelemetryOptions,
@@ -152,12 +153,12 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
       authScopes: a365Config.authScopes,
       tokenResolver: a365Config.tokenResolver,
     });
+    const perRequestOptions = resolveInternalPerRequestOptions();
     // A365SpanProcessor copies baggage (tenant, agent, session, etc.) to span attributes
     if (a365Config.baggage.enrichSpans) {
       spanProcessors.push(new A365SpanProcessor());
     }
-    if (a365Config.isPerRequestExportEnabled()) {
-      const perRequestOptions = a365Config.getPerRequestOptions();
+    if (perRequestOptions.enabled) {
       spanProcessors.push(
         new PerRequestSpanProcessor(a365Exporter, {
           maxBufferedTraces: perRequestOptions.maxTraces,

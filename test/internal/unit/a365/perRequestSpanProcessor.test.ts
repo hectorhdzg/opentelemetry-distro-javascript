@@ -241,14 +241,16 @@ describe("PerRequestSpanProcessor", () => {
       const root = tracer.startSpan("root");
       const rootCtx = trace.setSpan(otelContext.active(), root);
       const child = tracer.startSpan("child", {}, rootCtx);
-      child.end(); // child ends
-      root.end(); // root ends
-      // openCount should be 0 after both end, so the trace_completed path fires directly
+      root.end(); // root ends while child is still open
 
-      // Force any pending microtasks
+      expect(exporter.callCount).toBe(0);
+
+      vi.advanceTimersByTime(flushGraceMs);
       await vi.runAllTimersAsync();
 
       expect(exporter.callCount).toBe(1);
+
+      child.end(); // trace already swept, ending child should be a no-op
     });
 
     it("flushes stale trace after maxTraceAgeMs via sweep", async () => {
@@ -297,6 +299,14 @@ describe("PerRequestSpanProcessor", () => {
     it("queues exports when maxConcurrentExports is reached", async () => {
       // Use a manual-resolve exporter to hold the first export slot open
       let resolveFirstExport!: () => void;
+      let resolveFirstExportStarted!: () => void;
+      const firstExportStarted = new Promise<void>((resolve) => {
+        resolveFirstExportStarted = resolve;
+      });
+      let resolveSecondExportStarted!: () => void;
+      const secondExportStarted = new Promise<void>((resolve) => {
+        resolveSecondExportStarted = resolve;
+      });
       let exportCount = 0;
       const batches: ReadableSpan[][] = [];
 
@@ -305,11 +315,13 @@ describe("PerRequestSpanProcessor", () => {
           batches.push([...spans]);
           const idx = ++exportCount;
           if (idx === 1) {
+            resolveFirstExportStarted();
             // Hold first slot open until manually released
             new Promise<void>((resolve) => {
               resolveFirstExport = resolve;
             }).then(() => cb({ code: ExportResultCode.SUCCESS }));
           } else {
+            resolveSecondExportStarted();
             cb({ code: ExportResultCode.SUCCESS });
           }
         },
@@ -327,14 +339,12 @@ describe("PerRequestSpanProcessor", () => {
       root1.end();
       root2.end();
 
-      // Drain microtasks — export 1 starts (slot taken), export 2 queues
-      await new Promise<void>((resolve) => setTimeout(resolve, 10));
-
+      await firstExportStarted;
       expect(exportCount).toBe(1);
 
       // Release the first export
       resolveFirstExport();
-      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      await secondExportStarted;
 
       expect(exportCount).toBe(2);
     });
