@@ -97,14 +97,10 @@ export {
   A365_PARENT_SPAN_KEY,
   A365_AUTH_TOKEN_KEY,
   ObservabilityHostingManager,
-  AgenticTokenCache,
-  AgenticTokenCacheInstance,
   configureA365Hosting,
 } from "./a365/index.js";
 export type {
   ObservabilityHostingOptions,
-  AuthorizationLike,
-  AgenticTokenCacheOptions,
   HostingAdapterLike,
   TurnContextLike,
   ActivityLike,
