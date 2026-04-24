@@ -3,14 +3,7 @@
 
 import { ObservabilityHostingManager } from "./observabilityHostingManager.js";
 import type { ObservabilityHostingOptions } from "./observabilityHostingManager.js";
-import type { MiddlewareLike } from "./types.js";
-
-/**
- * Minimal adapter contract required to register hosting middleware.
- */
-export interface HostingAdapterLike {
-  use(...middlewares: Array<MiddlewareLike>): void;
-}
+import type { HostingAdapterLike } from "./types.js";
 
 /**
  * Configure A365 hosting middleware in a single call.

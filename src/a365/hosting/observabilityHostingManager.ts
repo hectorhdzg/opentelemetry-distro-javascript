@@ -10,7 +10,7 @@
 import { Logger } from "../../shared/logging/index.js";
 import { BaggageMiddleware } from "./baggageMiddleware.js";
 import { OutputLoggingMiddleware } from "./outputLoggingMiddleware.js";
-import type { MiddlewareLike } from "./types.js";
+import type { HostingAdapterLike } from "./types.js";
 
 /**
  * Configuration options for the hosting observability layer.
@@ -40,7 +40,7 @@ export class ObservabilityHostingManager {
    * Subsequent calls are ignored.
    */
   configure(
-    adapter: { use(...middlewares: Array<MiddlewareLike>): void },
+    adapter: HostingAdapterLike,
     options: ObservabilityHostingOptions,
   ): void {
     if (this._configured) {
