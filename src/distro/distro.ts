@@ -146,7 +146,6 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
     const exporterOptions = new ResolvedExporterOptions({
       clusterCategory: a365Config.clusterCategory,
       domainOverride: a365Config.domainOverride,
-      authScopes: a365Config.authScopes,
       tokenResolver: a365Config.tokenResolver,
     });
     const a365Exporter = new Agent365Exporter(exporterOptions);

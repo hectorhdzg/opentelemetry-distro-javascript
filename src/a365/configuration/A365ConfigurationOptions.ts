@@ -1,8 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-
-
 /**
  * Cluster categories for A365 service endpoint resolution.
  * Mirrors the ClusterCategory enum from Agent365-nodejs.
