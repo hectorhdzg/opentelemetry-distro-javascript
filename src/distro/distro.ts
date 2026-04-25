@@ -152,9 +152,7 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
       tokenResolver: a365Config.tokenResolver,
     });
     // A365SpanProcessor copies baggage (tenant, agent, session, etc.) to span attributes
-    if (a365Config.baggage.enrichSpans) {
-      spanProcessors.push(new A365SpanProcessor());
-    }
+    spanProcessors.push(new A365SpanProcessor());
     spanProcessors.push(new BatchSpanProcessor(a365Exporter));
   } else if (a365ConsoleExportFallback) {
     // A365 options provided but exporter disabled — fall back to console export

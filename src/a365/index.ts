@@ -2,13 +2,7 @@
 // Licensed under the MIT License.
 
 export { A365Configuration, A365_ENV_VARS } from "./configuration/index.js";
-export type {
-  A365Options,
-  ClusterCategory,
-  A365BaggageOptions,
-  A365HostingOptions,
-  ILogger,
-} from "./configuration/index.js";
+export type { A365Options, ClusterCategory, ILogger } from "./configuration/index.js";
 
 export { configureA365Logger, getA365Logger } from "./logging.js";
 
