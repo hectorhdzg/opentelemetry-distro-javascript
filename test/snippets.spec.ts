@@ -34,6 +34,23 @@ describe("snippets", () => {
     // Your application code follows...
   });
 
+  it("ReadmeSampleESMPreloadBootstrap", () => {
+    // This snippet mirrors the README guidance for Node ESM preload bootstrapping.
+    void import("@microsoft/opentelemetry/loader");
+    useMicrosoftOpenTelemetry({
+      instrumentationOptions: {
+        bunyan: { enabled: true },
+        winston: { enabled: true },
+      },
+      azureMonitor: {
+        azureMonitorExporterOptions: {
+          connectionString: process.env.APPLICATIONINSIGHTS_CONNECTION_STRING,
+        },
+        enableLiveMetrics: false,
+      },
+    });
+  });
+
   it("ReadmeSampleUseMicrosoftOpenTelemetry", () => {
     const options: MicrosoftOpenTelemetryOptions = {
       azureMonitor: {
