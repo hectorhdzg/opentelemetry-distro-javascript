@@ -27,7 +27,6 @@ npm install @microsoft/opentelemetry
 
 Use the following settings to enable and customize Agent 365 Observability for your agent.
 
-Set the `ENABLE_A365_OBSERVABILITY_EXPORTER` environment variable to `true` for observability. This setting exports logs to the service and requires a token resolver to be provided. Otherwise, the console exporter is used.
 
 ### Python
 
