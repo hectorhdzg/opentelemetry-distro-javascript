@@ -45,35 +45,34 @@ async function detect(detector: ResourceDetector) {
 }
 
 function mockVmRequest(
-  result:
-    | { body: string; statusCode: number }
-    | { error: Error },
+  result: { body: string; statusCode: number } | { error: Error },
   onOptions?: (options: unknown) => void,
 ) {
-  return vi.spyOn(http, "request").mockImplementation(
-    ((options: unknown, callback: (response: IncomingMessage) => void) => {
-      onOptions?.(options);
-      const request = new EventEmitter() as ClientRequest;
-      request.destroy = vi.fn();
-      request.end = () => {
-        queueMicrotask(() => {
-          if ("error" in result) {
-            request.emit("error", result.error);
-            return;
-          }
+  return vi.spyOn(http, "request").mockImplementation(((
+    options: unknown,
+    callback: (response: IncomingMessage) => void,
+  ) => {
+    onOptions?.(options);
+    const request = new EventEmitter() as ClientRequest;
+    request.destroy = vi.fn();
+    request.end = () => {
+      queueMicrotask(() => {
+        if ("error" in result) {
+          request.emit("error", result.error);
+          return;
+        }
 
-          const response = new EventEmitter() as IncomingMessage;
-          response.statusCode = result.statusCode;
-          response.setEncoding = vi.fn();
-          callback(response);
-          response.emit("data", result.body);
-          response.emit("end");
-        });
-        return request;
-      };
+        const response = new EventEmitter() as IncomingMessage;
+        response.statusCode = result.statusCode;
+        response.setEncoding = vi.fn();
+        callback(response);
+        response.emit("data", result.body);
+        response.emit("end");
+      });
       return request;
-    }) as unknown as typeof http.request,
-  );
+    };
+    return request;
+  }) as unknown as typeof http.request);
 }
 
 describe("@opentelemetry/resource-detector-azure contracts", () => {
