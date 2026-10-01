@@ -45,6 +45,79 @@ describe("LangChainTraceInstrumentor", () => {
       // Should not throw
       LangChainTraceInstrumentor.instrument(mockModule);
     });
+
+    // Regression test for the startup race fixed by binding `_tracerCtor`
+    // statically at field-declaration time. Previously the tracer ctor was
+    // resolved via a dynamic `import("./tracer.js")` whose `.then(...)`
+    // callback ran on a later microtask. Any `_configureSync` call landing
+    // in that window (typically the very first compiled-graph `invoke` after
+    // distro startup) silently fell through with no tracer attached,
+    // dropping the outer wrapper span and fragmenting the trace.
+    // This test asserts the wrapped `_configureSync` attaches a
+    // `LangChainTracer` on its very first synchronous invocation — i.e.,
+    // without awaiting any microtask after `instrument(...)`.
+    it("attaches a LangChainTracer synchronously on the first _configureSync call", () => {
+      const configureSyncOriginal = vi.fn();
+      const mockModule = {
+        CallbackManager: {
+          _configureSync: configureSyncOriginal,
+        },
+      };
+
+      LangChainTraceInstrumentor.instrument(mockModule as any);
+
+      // Invoke the wrapped _configureSync immediately — no awaits, no
+      // microtask flush. This is the scenario that previously dropped the
+      // outer wrapper span.
+      mockModule.CallbackManager._configureSync(undefined as any);
+
+      assert.strictEqual(configureSyncOriginal.mock.calls.length, 1);
+      const handlersArg = configureSyncOriginal.mock.calls[0][0];
+      assert.ok(Array.isArray(handlersArg), "handlers should be coerced into an array");
+      assert.strictEqual(handlersArg.length, 1);
+      assert.ok(
+        handlersArg[0] instanceof LangChainTracer,
+        "LangChainTracer should be attached on the first call, not deferred to a later microtask",
+      );
+    });
+
+    it("propagates enableSensitiveData to the attached LangChainTracer", () => {
+      const configureSyncOriginal = vi.fn();
+      const mockModule = {
+        CallbackManager: {
+          _configureSync: configureSyncOriginal,
+        },
+      };
+
+      LangChainTraceInstrumentor.instrument(mockModule as any, { enableSensitiveData: true });
+      mockModule.CallbackManager._configureSync(undefined as any);
+
+      const attached = configureSyncOriginal.mock.calls[0][0][0] as LangChainTracer;
+      assert.ok(attached instanceof LangChainTracer);
+      assert.strictEqual(
+        (attached as unknown as { enableSensitiveData: boolean }).enableSensitiveData,
+        true,
+        "the attached tracer should capture sensitive data",
+      );
+    });
+
+    it("defaults enableSensitiveData to false on the attached LangChainTracer", () => {
+      const configureSyncOriginal = vi.fn();
+      const mockModule = {
+        CallbackManager: {
+          _configureSync: configureSyncOriginal,
+        },
+      };
+
+      LangChainTraceInstrumentor.instrument(mockModule as any);
+      mockModule.CallbackManager._configureSync(undefined as any);
+
+      const attached = configureSyncOriginal.mock.calls[0][0][0] as LangChainTracer;
+      assert.strictEqual(
+        (attached as unknown as { enableSensitiveData: boolean }).enableSensitiveData,
+        false,
+      );
+    });
   });
 
   describe("enable / disable", () => {
@@ -149,5 +222,72 @@ describe("addTracerToHandlers", () => {
     const result = addTracerToHandlers(tracer, undefined, LangChainTracer);
     assert.ok(Array.isArray(result));
     assert.ok(result[0] instanceof LangChainTracer);
+  });
+
+  it("passes enableSensitiveData to the created LangChainTracer", () => {
+    const tracer = createMockTracer();
+    const result = addTracerToHandlers(tracer, undefined, LangChainTracer, true);
+    assert.ok(Array.isArray(result));
+    assert.strictEqual(
+      (result[0] as unknown as { enableSensitiveData: boolean }).enableSensitiveData,
+      true,
+    );
+  });
+
+  it("defaults enableSensitiveData to false when omitted", () => {
+    const tracer = createMockTracer();
+    const result = addTracerToHandlers(tracer, undefined, LangChainTracer);
+    assert.strictEqual(
+      (result[0] as unknown as { enableSensitiveData: boolean }).enableSensitiveData,
+      false,
+    );
+  });
+
+  it("reconciles enableSensitiveData on an existing array tracer instead of duplicating", () => {
+    const tracer = createMockTracer();
+    const existingTracer = new LangChainTracer(tracer, false);
+    const handlers = [existingTracer] as any;
+
+    const result = addTracerToHandlers(tracer, handlers, LangChainTracer, true);
+
+    assert.strictEqual(result.length, 1, "should not duplicate");
+    assert.strictEqual(
+      (existingTracer as unknown as { enableSensitiveData: boolean }).enableSensitiveData,
+      true,
+      "existing tracer's flag should be updated to the latest value",
+    );
+  });
+
+  it("reconciles enableSensitiveData back to false on an existing array tracer", () => {
+    const tracer = createMockTracer();
+    const existingTracer = new LangChainTracer(tracer, true);
+    const handlers = [existingTracer] as any;
+
+    addTracerToHandlers(tracer, handlers, LangChainTracer, false);
+
+    assert.strictEqual(
+      (existingTracer as unknown as { enableSensitiveData: boolean }).enableSensitiveData,
+      false,
+      "existing tracer's flag should be reset to the latest value",
+    );
+  });
+
+  it("reconciles enableSensitiveData on an existing CallbackManager-style tracer", () => {
+    const tracer = createMockTracer();
+    const existingTracer = new LangChainTracer(tracer, false);
+    const addHandlerSpy = vi.fn();
+    const handlers = {
+      inheritableHandlers: [existingTracer],
+      addHandler: addHandlerSpy,
+    } as any;
+
+    addTracerToHandlers(tracer, handlers, LangChainTracer, true);
+
+    assert.strictEqual(addHandlerSpy.mock.calls.length, 0, "should not add duplicate");
+    assert.strictEqual(
+      (existingTracer as unknown as { enableSensitiveData: boolean }).enableSensitiveData,
+      true,
+      "existing tracer's flag should be updated to the latest value",
+    );
   });
 });

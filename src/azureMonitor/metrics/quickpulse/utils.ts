@@ -94,7 +94,7 @@ export function getSdkVersion(): string {
 
 /** Get the internal SDK version type */
 export function getSdkVersionType(): string {
-  // Always report the Microsoft OpenTelemetry distro version with the `mot`
+  // Always report the Microsoft OpenTelemetry version with the `mot`
   // prefix so live metrics align with the Azure Monitor exporter's
   // ai.internal.sdkVersion tag (see Azure/azure-sdk-for-js#38352).
   return `mot${process.env["MICROSOFT_OPENTELEMETRY_VERSION"] ?? MICROSOFT_OPENTELEMETRY_VERSION}`;
@@ -470,13 +470,11 @@ function createCustomDimsFromAttributes(
   const customDims = new Map<string, string>();
   if (attributes) {
     for (const key of Object.keys(attributes)) {
-      if (
-        !(
-          key.startsWith("_MS.") ||
-          legacySemanticValues.includes(key) ||
-          httpSemanticValues.includes(key as any)
-        )
-      ) {
+      if (!(
+        key.startsWith("_MS.") ||
+        legacySemanticValues.includes(key) ||
+        httpSemanticValues.includes(key as any)
+      )) {
         customDims.set(key, String(attributes[key]));
       }
     }

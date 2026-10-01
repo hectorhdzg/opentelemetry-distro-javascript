@@ -4,10 +4,11 @@
 import { SpanKind } from "@opentelemetry/api";
 import { OpenTelemetryScope } from "./OpenTelemetryScope.js";
 import { OpenTelemetryConstants } from "../constants.js";
-import { safeSerializeToJson } from "../message-utils.js";
+import { safeSerializeToJson, serializeToolPayload } from "../message-utils.js";
 import type {
   ToolCallDetails,
   AgentDetails,
+  ExecuteToolCallResult,
   UserDetails,
   Request,
   SpanDetails,
@@ -65,13 +66,16 @@ export class ExecuteToolScope extends OpenTelemetryScope {
     this.setTagMaybe(OpenTelemetryConstants.GEN_AI_TOOL_NAME_KEY, toolName);
     this.setTagMaybe(
       OpenTelemetryConstants.GEN_AI_TOOL_ARGS_KEY,
-      args != null ? safeSerializeToJson(args, "arguments") : undefined,
+      typeof args === "string"
+        ? safeSerializeToJson(args, "arguments")
+        : serializeToolPayload(args),
     );
     this.setTagMaybe(OpenTelemetryConstants.GEN_AI_TOOL_TYPE_KEY, toolType);
     this.setTagMaybe(OpenTelemetryConstants.GEN_AI_TOOL_CALL_ID_KEY, toolCallId);
     this.setTagMaybe(OpenTelemetryConstants.GEN_AI_TOOL_DESCRIPTION_KEY, description);
 
     this.setTagMaybe(OpenTelemetryConstants.GEN_AI_CONVERSATION_ID_KEY, request.conversationId);
+    this.setTagMaybe(OpenTelemetryConstants.SESSION_ID_KEY, request.sessionId);
     this.setTagMaybe(OpenTelemetryConstants.CHANNEL_NAME_KEY, request.channel?.name);
     this.setTagMaybe(OpenTelemetryConstants.CHANNEL_LINK_KEY, request.channel?.description);
 
@@ -87,10 +91,16 @@ export class ExecuteToolScope extends OpenTelemetryScope {
    * Records response information for telemetry tracking.
    * Objects are serialized to JSON automatically.
    */
-  public recordResponse(response: Record<string, unknown> | string): void {
+  public recordResponse(response: ExecuteToolCallResult | null | undefined): void;
+  public recordResponse(response: Record<string, unknown> | string): void;
+  public recordResponse(
+    response: Record<string, unknown> | ExecuteToolCallResult | string | null | undefined,
+  ): void {
     this.setTagMaybe(
       OpenTelemetryConstants.GEN_AI_TOOL_CALL_RESULT_KEY,
-      safeSerializeToJson(response, "result"),
+      typeof response === "string"
+        ? safeSerializeToJson(response, "result")
+        : serializeToolPayload(response),
     );
   }
 }

@@ -2,6 +2,8 @@
 // Licensed under the MIT License.
 
 import type { A365Options, ClusterCategory } from "./A365ConfigurationOptions.js";
+import type { Agent365DurableDeliveryOptions } from "../exporter/durable/index.js";
+import type { ContextualTokenResolver } from "../exporter/Agent365ExporterOptions.js";
 import { getA365Logger } from "../logging.js";
 
 /**
@@ -72,6 +74,9 @@ export class A365Configuration {
     authScopes?: string[],
   ) => string | Promise<string>;
 
+  /** Contextual token resolver with rich context including the agentic user ID. */
+  public readonly contextualTokenResolver?: ContextualTokenResolver;
+
   /** Cluster category. */
   public readonly clusterCategory: ClusterCategory;
 
@@ -122,6 +127,9 @@ export class A365Configuration {
   /** Maximum estimated payload size (bytes) per HTTP chunk. */
   public readonly maxPayloadBytes?: number;
 
+  /** Durable delivery options for local spool-and-replay behavior. */
+  public readonly durableDelivery?: Agent365DurableDeliveryOptions;
+
   constructor(options?: A365Options) {
     // 1. Set defaults
     let enabled = false;
@@ -142,7 +150,7 @@ export class A365Configuration {
     // ENABLE_A365_OBSERVABILITY_EXPORTER controls just the HTTP exporter, not
     // the master `enabled` toggle. It is a secondary toggle that only takes
     // effect when A365 is configured in code (options provided), matching the
-    // Python distro behavior (see microsoft/opentelemetry-distro-python#87).
+    // Python package behavior (see microsoft/opentelemetry-distro-python#87).
     const envExporter = parseEnvBoolean(process.env[A365_ENV_VARS.EXPORTER_ENABLED]);
     if (
       envExporter !== undefined &&
@@ -159,7 +167,7 @@ export class A365Configuration {
 
     // observabilityScopeOverride wins over authScopes / env var so callers can
     // narrow the resolved scope set to a single explicit value (mirrors the
-    // Python distro's a365_observability_scope_override kwarg).
+    // Python package's a365_observability_scope_override kwarg).
     const scopeOverride = options?.observabilityScopeOverride?.trim();
     if (scopeOverride) {
       authScopes = [scopeOverride];
@@ -195,6 +203,7 @@ export class A365Configuration {
     this.enabled = enabled;
     this.enableObservabilityExporter = enableObservabilityExporter;
     this.tokenResolver = options?.tokenResolver;
+    this.contextualTokenResolver = options?.contextualTokenResolver;
     this.clusterCategory = clusterCategory;
     this.domainOverride = domainOverride;
     this.authScopes = authScopes;
@@ -206,6 +215,7 @@ export class A365Configuration {
     this.httpRequestTimeoutMilliseconds = options?.httpRequestTimeoutMilliseconds;
     this.maxExportBatchSize = options?.maxExportBatchSize;
     this.maxPayloadBytes = options?.maxPayloadBytes;
+    this.durableDelivery = options?.durableDelivery;
 
     // Warn when A365-scoped options are set but A365 is not enabled
     if (!this.enabled) {
@@ -217,7 +227,10 @@ export class A365Configuration {
     if (!options) return;
 
     const hasNonTrivialOptions =
-      options.tokenResolver !== undefined || options.domainOverride !== undefined;
+      options.tokenResolver !== undefined ||
+      options.contextualTokenResolver !== undefined ||
+      options.domainOverride !== undefined ||
+      options.durableDelivery !== undefined;
 
     if (hasNonTrivialOptions) {
       getA365Logger().warn(

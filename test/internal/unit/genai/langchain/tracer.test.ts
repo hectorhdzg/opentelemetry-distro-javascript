@@ -14,8 +14,22 @@ import type { Run } from "@langchain/core/tracers/base";
 import { LangChainTracer } from "../../../../../src/genai/instrumentations/langchain/tracer.js";
 import {
   ATTR_ERROR_MESSAGE,
+  ATTR_GEN_AI_INPUT_MESSAGES,
   ATTR_GEN_AI_OPERATION_NAME,
+  ATTR_GEN_AI_OUTPUT_TYPE,
+  ATTR_GEN_AI_OUTPUT_MESSAGES,
   ATTR_GEN_AI_PROVIDER_NAME,
+  ATTR_GEN_AI_REQUEST_CHOICE_COUNT,
+  ATTR_GEN_AI_REQUEST_MODEL,
+  ATTR_GEN_AI_REQUEST_TEMPERATURE,
+  ATTR_GEN_AI_REQUEST_TOP_P,
+  ATTR_GEN_AI_RESPONSE_ID,
+  ATTR_GEN_AI_RESPONSE_MODEL,
+  ATTR_GEN_AI_TOOL_CALL_ARGUMENTS,
+  ATTR_GEN_AI_TOOL_CALL_RESULT,
+  ATTR_GEN_AI_TOOL_NAME,
+  ATTR_GEN_AI_USAGE_INPUT_TOKENS,
+  ATTR_GEN_AI_USAGE_OUTPUT_TOKENS,
 } from "../../../../../src/genai/index.js";
 
 function makeRun(overrides: Partial<Run> = {}): Run {
@@ -126,6 +140,83 @@ describe("LangChainTracer", () => {
       const tracer = createMockTracer();
       const lct = new LangChainTracer(tracer);
       assert.strictEqual(lct.name, "OpenTelemetryLangChainTracer");
+    });
+  });
+
+  describe("enableSensitiveData content gating", () => {
+    function makeContentRun() {
+      return makeRun({
+        run_type: "llm",
+        name: "ChatOpenAI",
+        inputs: { messages: [[{ role: "user", content: "secret question" }]] },
+        outputs: { generations: [[{ text: "secret answer" }]] },
+      });
+    }
+
+    async function endTraceFor(lct: LangChainTracer, run: Run) {
+      await lct.onRunCreate(run);
+      await (lct as unknown as { _endTrace(r: Run): Promise<void> })._endTrace(run);
+    }
+
+    it("hides input/output messages by default", async () => {
+      const tracer = createMockTracer();
+      const lct = new LangChainTracer(tracer);
+      const run = makeContentRun();
+      await endTraceFor(lct, run);
+      const attrKeys = (tracer.lastSpan!.setAttribute as ReturnType<typeof vi.fn>).mock.calls.map(
+        (c: unknown[]) => c[0],
+      );
+      assert.ok(!attrKeys.includes(ATTR_GEN_AI_INPUT_MESSAGES), "input messages hidden");
+      assert.ok(!attrKeys.includes(ATTR_GEN_AI_OUTPUT_MESSAGES), "output messages hidden");
+    });
+
+    it("records input/output messages when enableSensitiveData is true", async () => {
+      const tracer = createMockTracer();
+      const lct = new LangChainTracer(tracer, true);
+      const run = makeContentRun();
+      await endTraceFor(lct, run);
+      const attrKeys = (tracer.lastSpan!.setAttribute as ReturnType<typeof vi.fn>).mock.calls.map(
+        (c: unknown[]) => c[0],
+      );
+      assert.ok(attrKeys.includes(ATTR_GEN_AI_INPUT_MESSAGES), "input messages recorded");
+      assert.ok(attrKeys.includes(ATTR_GEN_AI_OUTPUT_MESSAGES), "output messages recorded");
+    });
+
+    it("hides tool arguments/results by default but keeps tool name", async () => {
+      const tracer = createMockTracer();
+      const lct = new LangChainTracer(tracer);
+      const run = makeRun({
+        run_type: "tool",
+        name: "search",
+        serialized: { name: "search" },
+        inputs: { input: "secret query" },
+        outputs: { output: { kwargs: { content: "secret result" }, tool_call_id: "tc-1" } },
+      });
+      await endTraceFor(lct, run);
+      const attrKeys = (tracer.lastSpan!.setAttribute as ReturnType<typeof vi.fn>).mock.calls.map(
+        (c: unknown[]) => c[0],
+      );
+      assert.ok(attrKeys.includes(ATTR_GEN_AI_TOOL_NAME), "tool name always recorded");
+      assert.ok(!attrKeys.includes(ATTR_GEN_AI_TOOL_CALL_ARGUMENTS), "tool arguments hidden");
+      assert.ok(!attrKeys.includes(ATTR_GEN_AI_TOOL_CALL_RESULT), "tool result hidden");
+    });
+
+    it("records tool arguments/results when enableSensitiveData is true", async () => {
+      const tracer = createMockTracer();
+      const lct = new LangChainTracer(tracer, true);
+      const run = makeRun({
+        run_type: "tool",
+        name: "search",
+        serialized: { name: "search" },
+        inputs: { input: "secret query" },
+        outputs: { output: { kwargs: { content: "secret result" }, tool_call_id: "tc-1" } },
+      });
+      await endTraceFor(lct, run);
+      const attrKeys = (tracer.lastSpan!.setAttribute as ReturnType<typeof vi.fn>).mock.calls.map(
+        (c: unknown[]) => c[0],
+      );
+      assert.ok(attrKeys.includes(ATTR_GEN_AI_TOOL_CALL_ARGUMENTS), "tool arguments recorded");
+      assert.ok(attrKeys.includes(ATTR_GEN_AI_TOOL_CALL_RESULT), "tool result recorded");
     });
   });
 
@@ -246,7 +337,7 @@ describe("LangChainTracer", () => {
       );
     });
 
-    it("sets content attributes (always recorded)", async () => {
+    it("sets non-content tool attributes (tool name) regardless of content capture", async () => {
       const tracer = createMockTracer();
       const lct = new LangChainTracer(tracer);
       const run = makeRun({
@@ -316,6 +407,105 @@ describe("LangChainTracer", () => {
       // After reaching MAX_RUNS, startSpan should not be called for the overflow run
       const startSpanCalls = (tracer.startSpan as ReturnType<typeof vi.fn>).mock.calls;
       assert.strictEqual(startSpanCalls.length, 0, "should not create span when MAX_RUNS exceeded");
+    });
+  });
+
+  // End-to-end shape test for #128 scenario 3 / #150. Mirrors the Run object
+  // LangChain's `langchain-openai/converters/responses.ts` produces for a single
+  // ChatOpenAI invocation with `useResponsesApi: true`, and asserts the full
+  // bundle of GenAI semconv attributes lands on the span.
+  describe("Responses API (useResponsesApi: true) end-to-end", () => {
+    it("populates request/response model, response id, and token attrs on a RAPI run", async () => {
+      const tracer = createMockTracer();
+      const lct = new LangChainTracer(tracer);
+
+      const runId = "rapi-run-1";
+      const startedRun = makeRun({
+        id: runId,
+        run_type: "llm",
+        name: "ChatOpenAI",
+        serialized: {
+          id: ["langchain", "chat_models", "openai", "ChatOpenAI"],
+        },
+        extra: {
+          metadata: { ls_model_name: "deployment-o4-mini", ls_provider: "openai" },
+          invocation_params: {
+            model: "deployment-o4-mini",
+            n: 3,
+            temperature: 0.2,
+            top_p: 0.8,
+            response_format: { type: "json_object" },
+          },
+        },
+        inputs: {
+          messages: [[{ role: "user", content: "hello" }]],
+        },
+      });
+      await lct.onRunCreate(startedRun);
+
+      const completedRun = {
+        ...startedRun,
+        outputs: {
+          generations: [
+            [
+              {
+                message: {
+                  // Shape produced by libs/providers/langchain-openai/src/converters/responses.ts.
+                  // We pin distinct sentinels on the fields the test is supposed
+                  // to ignore so the assertions actually prove that `model`
+                  // (canonical) and `response_metadata.id` (provider-supplied)
+                  // win over the `model_name` alias and `message.id`.
+                  response_metadata: {
+                    model_provider: "openai",
+                    model: "o4-mini-2025-04-16",
+                    model_name: "model_name-alias-should-be-ignored",
+                    id: "resp_rapi_abc",
+                    created_at: 1_700_000_000,
+                  },
+                  usage_metadata: {
+                    input_tokens: 4,
+                    output_tokens: 7,
+                  },
+                  id: "message-id-should-be-ignored",
+                },
+              },
+            ],
+          ],
+        },
+      } as unknown as Run;
+      await (lct as unknown as { _endTrace(run: Run): Promise<void> })._endTrace(completedRun);
+
+      const span = tracer.lastSpan!;
+      const calls = (span.setAttribute as ReturnType<typeof vi.fn>).mock.calls;
+      const got = (key: string) => calls.find((c: unknown[]) => c[0] === key)?.[1];
+
+      assert.strictEqual(got(ATTR_GEN_AI_OPERATION_NAME), "chat", "operation name");
+      assert.strictEqual(
+        got(ATTR_GEN_AI_REQUEST_MODEL),
+        "deployment-o4-mini",
+        "request model should be the deployment alias",
+      );
+      assert.strictEqual(
+        got(ATTR_GEN_AI_REQUEST_CHOICE_COUNT),
+        3,
+        "request choice count should come from invocation_params.n when >1",
+      );
+      assert.strictEqual(got(ATTR_GEN_AI_REQUEST_TEMPERATURE), 0.2, "request temperature");
+      assert.strictEqual(got(ATTR_GEN_AI_REQUEST_TOP_P), 0.8, "request top_p");
+      assert.strictEqual(got(ATTR_GEN_AI_OUTPUT_TYPE), "json", "requested output type");
+      assert.strictEqual(
+        got(ATTR_GEN_AI_RESPONSE_MODEL),
+        "o4-mini-2025-04-16",
+        "response model should come from response_metadata.model (not the model_name alias)",
+      );
+      assert.strictEqual(
+        got(ATTR_GEN_AI_RESPONSE_ID),
+        "resp_rapi_abc",
+        "response id should come from response_metadata.id (not message.id)",
+      );
+      assert.strictEqual(got(ATTR_GEN_AI_USAGE_INPUT_TOKENS), 4, "input tokens");
+      assert.strictEqual(got(ATTR_GEN_AI_USAGE_OUTPUT_TOKENS), 7, "output tokens");
+      assert.strictEqual(span.statusObj?.code, SpanStatusCode.OK);
     });
   });
 });

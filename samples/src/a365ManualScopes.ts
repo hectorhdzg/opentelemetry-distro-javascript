@@ -136,7 +136,6 @@ async function callLLM(
 
     // LLM decided to call a tool
     scope.recordOutputMessages({
-      version: "0.1.0",
       messages: [
         {
           role: MessageRole.ASSISTANT,
@@ -292,7 +291,7 @@ function demonstrateContextPropagation(): void {
 // ────────────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  // Initialize the distro with A365 export enabled (same as a365Export.ts)
+  // Initialize Microsoft OpenTelemetry with A365 export enabled (same as a365Export.ts)
   useMicrosoftOpenTelemetry({
     azureMonitor: {
       azureMonitorExporterOptions: {

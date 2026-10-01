@@ -7,7 +7,14 @@ export type { A365Options, ClusterCategory, ILogger } from "./configuration/inde
 export { configureA365Logger, getA365Logger } from "./logging.js";
 
 export { Agent365Exporter } from "./exporter/index.js";
-export type { Agent365ExporterOptions, TokenResolver } from "./exporter/index.js";
+export type {
+  Agent365ExporterOptions,
+  Agent365DurableDeliveryOptions,
+  TokenResolver,
+  ContextualTokenResolver,
+  AgentIdentity,
+  TokenResolverContext,
+} from "./exporter/index.js";
 export { ResolvedExporterOptions } from "./exporter/index.js";
 
 // ── Scopes (manual telemetry API) ───────────────────────────────────────────
@@ -17,6 +24,7 @@ export {
   ExecuteToolScope,
   InferenceScope,
   OutputScope,
+  ApplyGuardrailScope,
 } from "./scopes/index.js";
 
 // ── Constants ───────────────────────────────────────────────────────────────
@@ -29,7 +37,15 @@ export {
   Modality,
   InvocationRole,
   InferenceOperationType,
-  A365_MESSAGE_SCHEMA_VERSION,
+  DEFAULT_FINISH_REASON,
+  ToolCallAction,
+  ToolCallOutcomeStatus,
+  ToolPolicyDecision,
+  ExecuteToolCallArguments,
+  ExecuteToolCallResult,
+  GuardrailDecisionType,
+  GuardrailRiskSeverity,
+  GuardrailTargetType,
 } from "./contracts.js";
 export type {
   ChatMessage,
@@ -40,16 +56,29 @@ export type {
   OutputMessagesParam,
   ResponseMessagesParam,
   MessagePart,
+  SystemInstructionPart,
   TextPart,
   ToolCallRequestPart,
   ToolCallResponsePart,
   ReasoningPart,
+  ToolCallExtensionData,
+  ToolCallIdentifier,
+  ToolCallContainer,
+  ToolCallResource,
+  ToolCallResultOutcome,
+  ToolCallResultSensitivity,
+  ToolCallResultPolicy,
+  ToolCallResultSecurity,
+  ToolCallResultPagination,
+  ToolCallResultResource,
   AgentDetails,
   UserDetails,
   CallerDetails,
   Request,
   Channel,
   ServiceEndpoint,
+  GenAiRequestParameters,
+  GenAiResponseParameters,
   InvokeAgentScopeDetails,
   ToolCallDetails,
   InferenceDetails,
@@ -58,6 +87,8 @@ export type {
   SpanDetails,
   ParentSpanRef,
   ParentContext,
+  GuardrailDetails,
+  GuardrailFinding,
 } from "./contracts.js";
 
 // ── Context propagation ─────────────────────────────────────────────────────

@@ -13,26 +13,28 @@ import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-ho
 
 import {
   ExecuteToolScope,
+  ExecuteToolCallArguments,
+  ExecuteToolCallResult,
   InvokeAgentScope,
   InferenceScope,
   OutputScope,
   OpenTelemetryScope,
   OpenTelemetryConstants,
+  ToolCallAction,
+  ToolCallOutcomeStatus,
 } from "../../../../src/a365/index.js";
 import type {
   AgentDetails,
+  GenAiRequestParameters,
+  GenAiResponseParameters,
   InvokeAgentScopeDetails,
   ToolCallDetails,
   InferenceDetails,
   UserDetails,
-  InputMessages,
   OutputResponse,
+  SystemInstructionPart,
 } from "../../../../src/a365/index.js";
-import {
-  InferenceOperationType,
-  MessageRole,
-  A365_MESSAGE_SCHEMA_VERSION,
-} from "../../../../src/a365/index.js";
+import { InferenceOperationType, MessageRole } from "../../../../src/a365/index.js";
 import { safeSerializeToJson } from "../../../../src/a365/message-utils.js";
 
 let sharedExporter: InMemorySpanExporter;
@@ -526,6 +528,10 @@ describe("Scopes", () => {
             key: OpenTelemetryConstants.GEN_AI_CALLER_CLIENT_IP_KEY,
             val: "10.0.0.10",
           }),
+          expect.objectContaining({
+            key: OpenTelemetryConstants.GEN_AI_TOOL_ARGS_KEY,
+            val: '{"param": "value"}',
+          }),
         ]),
       );
 
@@ -563,6 +569,10 @@ describe("Scopes", () => {
             key: OpenTelemetryConstants.CHANNEL_LINK_KEY,
             val: "https://web.link",
           }),
+          expect.objectContaining({
+            key: OpenTelemetryConstants.GEN_AI_TOOL_CALL_RESULT_KEY,
+            val: '{"result":"Tool result"}',
+          }),
         ]),
       );
       scope?.dispose();
@@ -574,6 +584,7 @@ describe("Scopes", () => {
       const scope = ExecuteToolScope.start(
         {
           conversationId: "conv-tool-123",
+          sessionId: "session-tool-123",
           channel: { name: "ChannelTool", description: "https://channel/tool" },
         },
         { toolName: "test-tool" },
@@ -587,6 +598,10 @@ describe("Scopes", () => {
           expect.objectContaining({
             key: OpenTelemetryConstants.GEN_AI_CONVERSATION_ID_KEY,
             val: "conv-tool-123",
+          }),
+          expect.objectContaining({
+            key: OpenTelemetryConstants.SESSION_ID_KEY,
+            val: "session-tool-123",
           }),
           expect.objectContaining({
             key: OpenTelemetryConstants.CHANNEL_NAME_KEY,
@@ -833,6 +848,7 @@ describe("Scopes", () => {
       const scope = InferenceScope.start(
         {
           conversationId: "conv-inf-123",
+          sessionId: "session-inf-123",
           channel: { name: "ChannelInf", description: "https://channel/inf" },
         },
         inferenceDetails,
@@ -846,6 +862,10 @@ describe("Scopes", () => {
           expect.objectContaining({
             key: OpenTelemetryConstants.GEN_AI_CONVERSATION_ID_KEY,
             val: "conv-inf-123",
+          }),
+          expect.objectContaining({
+            key: OpenTelemetryConstants.SESSION_ID_KEY,
+            val: "session-inf-123",
           }),
           expect.objectContaining({
             key: OpenTelemetryConstants.CHANNEL_NAME_KEY,
@@ -995,8 +1015,8 @@ describe("Scopes", () => {
     });
 
     it.each([
-      ["CLIENT (default)", undefined, SpanKind.CLIENT],
-      ["SERVER", SpanKind.SERVER, SpanKind.SERVER],
+      ["INTERNAL (default)", undefined, SpanKind.INTERNAL],
+      ["SERVER (override)", SpanKind.SERVER, SpanKind.SERVER],
     ])("InvokeAgentScope spanKind: %s", (_label, input, expected) => {
       const scope = InvokeAgentScope.start(
         testRequest,
@@ -1079,10 +1099,10 @@ describe("Request content and message serialization (span attributes)", () => {
       const parsed = JSON.parse(
         attributes[OpenTelemetryConstants.GEN_AI_INPUT_MESSAGES_KEY] as string,
       );
-      expect(parsed.version).toBe("0.1.0");
-      expect(parsed.messages).toHaveLength(1);
-      expect(parsed.messages[0].role).toBe("user");
-      expect(parsed.messages[0].parts[0]).toEqual({ type: "text", content: "Hello agent" });
+      expect(Array.isArray(parsed)).toBe(true);
+      expect(parsed).toHaveLength(1);
+      expect(parsed[0].role).toBe("user");
+      expect(parsed[0].parts[0]).toEqual({ type: "text", content: "Hello agent" });
     });
 
     it("should record a string array as input message attributes", () => {
@@ -1097,14 +1117,14 @@ describe("Request content and message serialization (span attributes)", () => {
       const parsed = JSON.parse(
         attributes[OpenTelemetryConstants.GEN_AI_INPUT_MESSAGES_KEY] as string,
       );
-      expect(parsed.messages).toHaveLength(2);
-      expect(parsed.messages[0].parts[0].content).toBe("msg1");
-      expect(parsed.messages[1].parts[0].content).toBe("msg2");
+      expect(Array.isArray(parsed)).toBe(true);
+      expect(parsed).toHaveLength(2);
+      expect(parsed[0].parts[0].content).toBe("msg1");
+      expect(parsed[1].parts[0].content).toBe("msg2");
     });
 
     it("should record a structured InputMessages wrapper as-is", () => {
-      const wrapper: InputMessages = {
-        version: A365_MESSAGE_SCHEMA_VERSION,
+      const wrapper = {
         messages: [
           { role: MessageRole.SYSTEM, parts: [{ type: "text", content: "system prompt" }] },
         ],
@@ -1120,9 +1140,9 @@ describe("Request content and message serialization (span attributes)", () => {
       const parsed = JSON.parse(
         attributes[OpenTelemetryConstants.GEN_AI_INPUT_MESSAGES_KEY] as string,
       );
-      expect(parsed.version).toBe("0.1.0");
-      expect(parsed.messages).toHaveLength(1);
-      expect(parsed.messages[0].role).toBe("system");
+      expect(Array.isArray(parsed)).toBe(true);
+      expect(parsed).toHaveLength(1);
+      expect(parsed[0].role).toBe("system");
     });
 
     it("should not set input messages when content is undefined", () => {
@@ -1144,9 +1164,260 @@ describe("Request content and message serialization (span attributes)", () => {
       const parsed = JSON.parse(
         attributes[OpenTelemetryConstants.GEN_AI_OUTPUT_MESSAGES_KEY] as string,
       );
-      expect(parsed.messages).toHaveLength(1);
-      expect(parsed.messages[0].role).toBe("assistant");
-      expect(parsed.messages[0].parts[0].content).toBe("single output");
+      expect(Array.isArray(parsed)).toBe(true);
+      expect(parsed).toHaveLength(1);
+      expect(parsed[0].role).toBe("assistant");
+      expect(parsed[0].parts[0].content).toBe("single output");
+      expect(parsed[0].finish_reason).toBe("stop");
+    });
+  });
+
+  describe("InferenceScope – session id span attribute", () => {
+    it("should write request.sessionId directly to the span", () => {
+      const scope = InferenceScope.start(
+        { ...testRequest, sessionId: "session-inf-123" },
+        { operationName: InferenceOperationType.CHAT, model: "gpt-4o" },
+        testAgentDetails,
+      );
+      scope.dispose();
+
+      const attributes = getLastSpan().attributes;
+      expect(attributes[OpenTelemetryConstants.SESSION_ID_KEY]).toBe("session-inf-123");
+    });
+  });
+
+  describe("ExecuteToolScope – session id span attribute", () => {
+    it("should write request.sessionId directly to the span", () => {
+      const scope = ExecuteToolScope.start(
+        { ...testRequest, sessionId: "session-tool-123" },
+        { toolName: "lookup", toolCallId: "tool-call-1", toolType: "function" },
+        testAgentDetails,
+      );
+      scope.dispose();
+
+      const attributes = getLastSpan().attributes;
+      expect(attributes[OpenTelemetryConstants.SESSION_ID_KEY]).toBe("session-tool-123");
+    });
+  });
+
+  describe("InvokeAgentScope – GenAI request and response parameters", () => {
+    it("should record all request attributes and response-at-start attributes", () => {
+      const requestParameters: GenAiRequestParameters = {
+        model: "gpt-4.1",
+        seed: 42,
+        choiceCount: 2,
+        frequencyPenalty: 0.25,
+        maxTokens: 512,
+        presencePenalty: -0.5,
+        stopSequences: ["DONE", "STOP"],
+        temperature: 0.2,
+        topP: 0.8,
+        dataSourceId: "sharepoint",
+        outputType: "json",
+        systemInstructions: [{ type: "text", content: "Answer with JSON only." }],
+      };
+      const responseParameters: GenAiResponseParameters = {
+        finishReasons: ["stop"],
+        inputTokens: 120,
+        outputTokens: 48,
+        cacheWriteInputTokens: 12,
+        cacheReadInputTokens: 3,
+      };
+      const scope = InvokeAgentScope.start(
+        testRequest,
+        { requestParameters, responseParameters },
+        { ...testAgentDetails, providerName: "azure-openai" },
+      );
+      scope.dispose();
+
+      const attributes = getLastSpan().attributes;
+      expect(attributes[OpenTelemetryConstants.GEN_AI_PROVIDER_NAME_KEY]).toBe("azure-openai");
+      expect(attributes[OpenTelemetryConstants.GEN_AI_REQUEST_MODEL_KEY]).toBe("gpt-4.1");
+      expect(attributes[OpenTelemetryConstants.GEN_AI_REQUEST_SEED_KEY]).toBe(42);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_REQUEST_CHOICE_COUNT_KEY]).toBe(2);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_REQUEST_FREQUENCY_PENALTY_KEY]).toBe(0.25);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_REQUEST_MAX_TOKENS_KEY]).toBe(512);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_REQUEST_PRESENCE_PENALTY_KEY]).toBe(-0.5);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_REQUEST_STOP_SEQUENCES_KEY]).toEqual([
+        "DONE",
+        "STOP",
+      ]);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_REQUEST_TEMPERATURE_KEY]).toBe(0.2);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_REQUEST_TOP_P_KEY]).toBe(0.8);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_DATA_SOURCE_ID_KEY]).toBe("sharepoint");
+      expect(attributes[OpenTelemetryConstants.GEN_AI_OUTPUT_TYPE_KEY]).toBe("json");
+      expect(
+        JSON.parse(attributes[OpenTelemetryConstants.GEN_AI_SYSTEM_INSTRUCTIONS_KEY] as string),
+      ).toEqual([{ type: "text", content: "Answer with JSON only." }]);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_RESPONSE_FINISH_REASONS_KEY]).toEqual([
+        "stop",
+      ]);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_USAGE_INPUT_TOKENS_KEY]).toBe(120);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_USAGE_OUTPUT_TOKENS_KEY]).toBe(48);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_USAGE_CACHE_WRITE_INPUT_TOKENS_KEY]).toBe(12);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS_KEY]).toBe(3);
+    });
+
+    it("should record late response parameters without changing endpoint or message behavior", () => {
+      const details: InvokeAgentScopeDetails = {
+        endpoint: { host: "agent-api.contoso.com", port: 8443 },
+      };
+      const scope = InvokeAgentScope.start(
+        { ...testRequest, content: "Hello agent" },
+        details,
+        testAgentDetails,
+      );
+
+      scope.recordResponse("Done");
+      scope.recordResponseParameters({
+        finishReasons: ["stop"],
+        inputTokens: 0,
+        outputTokens: 24,
+        cacheWriteInputTokens: 0,
+        cacheReadInputTokens: 2,
+      });
+      scope.dispose();
+
+      const attributes = getLastSpan().attributes;
+      expect(attributes[OpenTelemetryConstants.SERVER_ADDRESS_KEY]).toBe("agent-api.contoso.com");
+      expect(attributes[OpenTelemetryConstants.SERVER_PORT_KEY]).toBe(8443);
+      expect(
+        JSON.parse(attributes[OpenTelemetryConstants.GEN_AI_INPUT_MESSAGES_KEY] as string)[0]
+          .parts[0].content,
+      ).toBe("Hello agent");
+      expect(
+        JSON.parse(attributes[OpenTelemetryConstants.GEN_AI_OUTPUT_MESSAGES_KEY] as string)[0]
+          .parts[0].content,
+      ).toBe("Done");
+      expect(attributes[OpenTelemetryConstants.GEN_AI_RESPONSE_FINISH_REASONS_KEY]).toEqual([
+        "stop",
+      ]);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_USAGE_INPUT_TOKENS_KEY]).toBe(0);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_USAGE_OUTPUT_TOKENS_KEY]).toBe(24);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_USAGE_CACHE_WRITE_INPUT_TOKENS_KEY]).toBe(0);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS_KEY]).toBe(2);
+    });
+
+    it("should omit absent request and response parameters", () => {
+      const scope = InvokeAgentScope.start(
+        testRequest,
+        {
+          requestParameters: {
+            model: undefined,
+            stopSequences: undefined,
+            outputType: undefined,
+          },
+          responseParameters: {
+            finishReasons: undefined,
+            inputTokens: undefined,
+          },
+        },
+        testAgentDetails,
+      );
+      scope.dispose();
+
+      const attributes = getLastSpan().attributes;
+      expect(attributes[OpenTelemetryConstants.GEN_AI_REQUEST_MODEL_KEY]).toBeUndefined();
+      expect(attributes[OpenTelemetryConstants.GEN_AI_REQUEST_STOP_SEQUENCES_KEY]).toBeUndefined();
+      expect(attributes[OpenTelemetryConstants.GEN_AI_OUTPUT_TYPE_KEY]).toBeUndefined();
+      expect(attributes[OpenTelemetryConstants.GEN_AI_RESPONSE_FINISH_REASONS_KEY]).toBeUndefined();
+      expect(attributes[OpenTelemetryConstants.GEN_AI_USAGE_INPUT_TOKENS_KEY]).toBeUndefined();
+    });
+
+    it("should emit zero-valued request and response numbers", () => {
+      const scope = InvokeAgentScope.start(
+        testRequest,
+        {
+          requestParameters: {
+            seed: 0,
+            choiceCount: 0,
+            frequencyPenalty: 0,
+            maxTokens: 0,
+            presencePenalty: 0,
+            temperature: 0,
+            topP: 0,
+          },
+          responseParameters: {
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheWriteInputTokens: 0,
+            cacheReadInputTokens: 0,
+          },
+        },
+        testAgentDetails,
+      );
+      scope.dispose();
+
+      const attributes = getLastSpan().attributes;
+      expect(attributes[OpenTelemetryConstants.GEN_AI_REQUEST_SEED_KEY]).toBe(0);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_REQUEST_CHOICE_COUNT_KEY]).toBe(0);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_REQUEST_FREQUENCY_PENALTY_KEY]).toBe(0);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_REQUEST_MAX_TOKENS_KEY]).toBe(0);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_REQUEST_PRESENCE_PENALTY_KEY]).toBe(0);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_REQUEST_TEMPERATURE_KEY]).toBe(0);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_REQUEST_TOP_P_KEY]).toBe(0);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_USAGE_INPUT_TOKENS_KEY]).toBe(0);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_USAGE_OUTPUT_TOKENS_KEY]).toBe(0);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_USAGE_CACHE_WRITE_INPUT_TOKENS_KEY]).toBe(0);
+      expect(attributes[OpenTelemetryConstants.GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS_KEY]).toBe(0);
+    });
+
+    it("should emit a deterministic fallback for circular system instructions", () => {
+      const circularInstruction: SystemInstructionPart = { type: "custom" };
+      circularInstruction.circular = circularInstruction;
+
+      expect(() => {
+        const scope = InvokeAgentScope.start(
+          testRequest,
+          {
+            requestParameters: {
+              systemInstructions: [circularInstruction],
+            },
+          },
+          testAgentDetails,
+        );
+        scope.dispose();
+      }).not.toThrow();
+
+      const attributes = getLastSpan().attributes;
+      expect(
+        JSON.parse(attributes[OpenTelemetryConstants.GEN_AI_SYSTEM_INSTRUCTIONS_KEY] as string),
+      ).toEqual([
+        {
+          type: "text",
+          content: "[serialization failed: 1 instruction]",
+        },
+      ]);
+    });
+
+    it("should propagate the common agent provider name", () => {
+      const scope = InvokeAgentScope.start(
+        testRequest,
+        {},
+        { ...testAgentDetails, providerName: "copilot" },
+      );
+      scope.dispose();
+
+      expect(getLastSpan().attributes[OpenTelemetryConstants.GEN_AI_PROVIDER_NAME_KEY]).toBe(
+        "copilot",
+      );
+    });
+
+    it("should let inference details override the common agent provider name", () => {
+      const scope = InferenceScope.start(
+        testRequest,
+        {
+          operationName: InferenceOperationType.CHAT,
+          model: "gpt-4o",
+          providerName: "azure-openai",
+        },
+        { ...testAgentDetails, providerName: "copilot" },
+      );
+      scope.dispose();
+
+      expect(getLastSpan().attributes[OpenTelemetryConstants.GEN_AI_PROVIDER_NAME_KEY]).toBe(
+        "azure-openai",
+      );
     });
   });
 
@@ -1192,10 +1463,11 @@ describe("Request content and message serialization (span attributes)", () => {
       const parsed = JSON.parse(
         attributes[OpenTelemetryConstants.GEN_AI_OUTPUT_MESSAGES_KEY] as string,
       );
-      expect(parsed.version).toBe(A365_MESSAGE_SCHEMA_VERSION);
-      expect(parsed.messages).toHaveLength(1);
-      expect(parsed.messages[0].role).toBe("assistant");
-      expect(parsed.messages[0].parts[0].content).toBe("Hello user");
+      expect(Array.isArray(parsed)).toBe(true);
+      expect(parsed).toHaveLength(1);
+      expect(parsed[0].role).toBe("assistant");
+      expect(parsed[0].parts[0].content).toBe("Hello user");
+      expect(parsed[0].finish_reason).toBe("stop");
     });
 
     it("should allow overwriting output messages via recordOutputMessages", () => {
@@ -1208,7 +1480,7 @@ describe("Request content and message serialization (span attributes)", () => {
       const parsed = JSON.parse(
         attributes[OpenTelemetryConstants.GEN_AI_OUTPUT_MESSAGES_KEY] as string,
       );
-      expect(parsed.messages[0].parts[0].content).toBe("updated output");
+      expect(parsed[0].parts[0].content).toBe("updated output");
     });
 
     it("should handle raw dict as output messages", () => {
@@ -1247,6 +1519,10 @@ describe("Request content and message serialization (span attributes)", () => {
   });
 
   describe("ExecuteToolScope – tool args and response serialization", () => {
+    const serializationError =
+      '{"serialization_error":"Failed to serialize execute tool payload."}';
+    const legacySerializationError = '{"error":"serialization failed"}';
+
     it("should serialize object arguments to span attribute", () => {
       const objArgs = { query: "GDPR", maxResults: 5 };
       const scope = ExecuteToolScope.start(
@@ -1269,6 +1545,217 @@ describe("Request content and message serialization (span attributes)", () => {
       const attributes = getLastSpan().attributes;
       expect(attributes[OpenTelemetryConstants.GEN_AI_TOOL_CALL_RESULT_KEY]).toBe(
         JSON.stringify(objResponse),
+      );
+    });
+
+    it("should serialize typed arguments with schema version, nested values, and extension fields", () => {
+      const typedArgs = new ExecuteToolCallArguments({
+        action: ToolCallAction.READ,
+        parameters: {
+          query: "GDPR",
+          filters: { sensitivity: "high", includeArchived: true },
+        },
+        resources: [
+          {
+            id: "doc-1",
+            type: "document",
+            provider: "sharepoint",
+            extension_data: { provider_resource_type: "page" },
+          },
+        ],
+        extension_data: { request_context: { scenario: "enterprise-search" } },
+      });
+
+      const scope = ExecuteToolScope.start(
+        testRequest,
+        { toolName: "search", arguments: typedArgs },
+        testAgentDetails,
+      );
+      scope.dispose();
+
+      const parsed = JSON.parse(
+        getLastSpan().attributes[OpenTelemetryConstants.GEN_AI_TOOL_ARGS_KEY] as string,
+      );
+      expect(parsed.schema_version).toBe("1.0");
+      expect(parsed.action).toBe("read");
+      expect(parsed.parameters.filters).toEqual({
+        sensitivity: "high",
+        includeArchived: true,
+      });
+      expect(parsed.resources[0].metadata.provider_resource_type).toBe("page");
+      expect(parsed.metadata.request_context).toEqual({ scenario: "enterprise-search" });
+    });
+
+    it("should serialize typed results with nested outcome and extension fields", () => {
+      const typedResult = new ExecuteToolCallResult({
+        outcome: {
+          status: ToolCallOutcomeStatus.SUCCESS,
+          message: "Fetched 1 document",
+          provider_code: "OK",
+          extension_data: { retryable: false },
+        },
+        resources: [
+          {
+            id: "doc-1",
+            type: "document",
+            outcome: {
+              status: ToolCallOutcomeStatus.SUCCESS,
+              message: "available",
+              extension_data: { provider_status: "complete" },
+            },
+            data: { title: "Doc A" },
+            extension_data: { relevance_score: 0.95 },
+          },
+        ],
+        pagination: {
+          has_more: false,
+          total_count: 1,
+          extension_data: { request_charge: 3 },
+        },
+        extension_data: { source_trace: { provider: "sharepoint" } },
+      });
+
+      const scope = ExecuteToolScope.start(testRequest, { toolName: "tool" }, testAgentDetails);
+      scope.recordResponse(typedResult);
+      scope.dispose();
+
+      const parsed = JSON.parse(
+        getLastSpan().attributes[OpenTelemetryConstants.GEN_AI_TOOL_CALL_RESULT_KEY] as string,
+      );
+      expect(parsed.schema_version).toBe("1.0");
+      expect(parsed.outcome).toEqual({
+        status: "success",
+        message: "Fetched 1 document",
+        provider_code: "OK",
+        metadata: { retryable: false },
+      });
+      expect(parsed.resources[0].outcome.metadata.provider_status).toBe("complete");
+      expect(parsed.resources[0].metadata.relevance_score).toBe(0.95);
+      expect(parsed.pagination).toEqual({
+        has_more: false,
+        total_count: 1,
+        metadata: { request_charge: 3 },
+      });
+      expect(parsed.metadata.source_trace).toEqual({ provider: "sharepoint" });
+    });
+
+    it("should omit the typed result attribute when response is undefined", () => {
+      const scope = ExecuteToolScope.start(testRequest, { toolName: "tool" }, testAgentDetails);
+      scope.recordResponse(undefined);
+      scope.dispose();
+
+      expect(
+        getLastSpan().attributes[OpenTelemetryConstants.GEN_AI_TOOL_CALL_RESULT_KEY],
+      ).toBeUndefined();
+    });
+
+    it("should omit the typed result attribute when response is null", () => {
+      const scope = ExecuteToolScope.start(testRequest, { toolName: "tool" }, testAgentDetails);
+      scope.recordResponse(null);
+      scope.dispose();
+
+      expect(
+        getLastSpan().attributes[OpenTelemetryConstants.GEN_AI_TOOL_CALL_RESULT_KEY],
+      ).toBeUndefined();
+    });
+
+    it("should preserve the legacy fallback for circular object arguments", () => {
+      const circular: Record<string, unknown> = { query: "GDPR" };
+      circular.self = circular;
+
+      const scope = ExecuteToolScope.start(
+        testRequest,
+        { toolName: "search", arguments: circular },
+        testAgentDetails,
+      );
+      scope.dispose();
+
+      expect(getLastSpan().attributes[OpenTelemetryConstants.GEN_AI_TOOL_ARGS_KEY]).toBe(
+        legacySerializationError,
+      );
+    });
+
+    it("should use the typed fallback for circular ExecuteToolCallArguments instances", () => {
+      const extension_data: Record<string, unknown> = {};
+      const typedArgs = new ExecuteToolCallArguments({
+        action: ToolCallAction.READ,
+        parameters: { query: "GDPR" },
+        extension_data,
+      });
+      extension_data.self = typedArgs;
+
+      const scope = ExecuteToolScope.start(
+        testRequest,
+        { toolName: "search", arguments: typedArgs },
+        testAgentDetails,
+      );
+      scope.dispose();
+
+      expect(getLastSpan().attributes[OpenTelemetryConstants.GEN_AI_TOOL_ARGS_KEY]).toBe(
+        serializationError,
+      );
+    });
+
+    it("should preserve the legacy fallback for circular object responses", () => {
+      const circular: Record<string, unknown> = { results: ["Doc A"] };
+      circular.self = circular;
+
+      const scope = ExecuteToolScope.start(testRequest, { toolName: "tool" }, testAgentDetails);
+      scope.recordResponse(circular);
+      scope.dispose();
+
+      expect(getLastSpan().attributes[OpenTelemetryConstants.GEN_AI_TOOL_CALL_RESULT_KEY]).toBe(
+        legacySerializationError,
+      );
+    });
+
+    it("should use the typed fallback for circular ExecuteToolCallResult instances", () => {
+      const data: Record<string, unknown> = {};
+      const typedResult = new ExecuteToolCallResult({
+        outcome: {
+          status: ToolCallOutcomeStatus.SUCCESS,
+        },
+        data,
+      });
+      data.self = data;
+
+      const scope = ExecuteToolScope.start(testRequest, { toolName: "tool" }, testAgentDetails);
+      scope.recordResponse(typedResult);
+      scope.dispose();
+
+      expect(getLastSpan().attributes[OpenTelemetryConstants.GEN_AI_TOOL_CALL_RESULT_KEY]).toBe(
+        serializationError,
+      );
+    });
+
+    it("should not throw when argument payload detection throws", () => {
+      const { proxy, revoke } = Proxy.revocable({}, {});
+      revoke();
+
+      expect(() => {
+        const scope = ExecuteToolScope.start(
+          testRequest,
+          { toolName: "search", arguments: proxy },
+          testAgentDetails,
+        );
+        scope.dispose();
+      }).not.toThrow();
+
+      expect(getLastSpan().attributes[OpenTelemetryConstants.GEN_AI_TOOL_ARGS_KEY]).toBe(
+        serializationError,
+      );
+    });
+
+    it("should not throw when response payload detection throws", () => {
+      const { proxy, revoke } = Proxy.revocable({}, {});
+      revoke();
+      const scope = ExecuteToolScope.start(testRequest, { toolName: "tool" }, testAgentDetails);
+
+      expect(() => scope.recordResponse(proxy)).not.toThrow();
+      scope.dispose();
+
+      expect(getLastSpan().attributes[OpenTelemetryConstants.GEN_AI_TOOL_CALL_RESULT_KEY]).toBe(
+        serializationError,
       );
     });
   });

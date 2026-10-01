@@ -21,7 +21,14 @@ export type {
 export { A365Configuration } from "./a365/index.js";
 export type { ClusterCategory } from "./a365/index.js";
 export { Agent365Exporter } from "./a365/index.js";
-export type { Agent365ExporterOptions, TokenResolver } from "./a365/index.js";
+export type {
+  Agent365ExporterOptions,
+  Agent365DurableDeliveryOptions,
+  TokenResolver,
+  ContextualTokenResolver,
+  AgentIdentity,
+  TokenResolverContext,
+} from "./a365/index.js";
 
 // ── Re-exports from A365 scopes (manual telemetry API) ──────────────────────
 export {
@@ -30,13 +37,22 @@ export {
   ExecuteToolScope,
   InferenceScope,
   OutputScope,
+  ApplyGuardrailScope,
   OpenTelemetryConstants,
   MessageRole,
   FinishReason,
   Modality,
   InvocationRole,
   InferenceOperationType,
-  A365_MESSAGE_SCHEMA_VERSION,
+  DEFAULT_FINISH_REASON,
+  ToolCallAction,
+  ToolCallOutcomeStatus,
+  ToolPolicyDecision,
+  ExecuteToolCallArguments,
+  ExecuteToolCallResult,
+  GuardrailDecisionType,
+  GuardrailRiskSeverity,
+  GuardrailTargetType,
   isParentSpanRef,
   createContextWithParentSpanRef,
   runWithParentSpanRef,
@@ -59,6 +75,8 @@ export type {
   Request as A365Request,
   Channel,
   ServiceEndpoint,
+  GenAiRequestParameters,
+  GenAiResponseParameters,
   InvokeAgentScopeDetails,
   ToolCallDetails,
   InferenceDetails,
@@ -75,11 +93,24 @@ export type {
   OutputMessagesParam,
   ResponseMessagesParam,
   MessagePart,
+  SystemInstructionPart,
   TextPart,
   ToolCallRequestPart,
   ToolCallResponsePart,
   ReasoningPart,
+  ToolCallExtensionData,
+  ToolCallIdentifier,
+  ToolCallContainer,
+  ToolCallResource,
+  ToolCallResultOutcome,
+  ToolCallResultSensitivity,
+  ToolCallResultPolicy,
+  ToolCallResultSecurity,
+  ToolCallResultPagination,
+  ToolCallResultResource,
   HeadersCarrier,
+  GuardrailDetails,
+  GuardrailFinding,
 } from "./a365/index.js";
 
 // ── Re-exports from A365 hosting utilities ──────────────────────────────────
@@ -114,3 +145,14 @@ export type {
 
 // ── Re-exports from types ───────────────────────────────────────────────────
 export type { OpenAIAgentsInstrumentationConfig, LangChainInstrumentationConfig } from "./types.js";
+
+// ── Re-exports from GenAI main-agent propagation ────────────────────────────
+export {
+  GEN_AI_MAIN_AGENT_ATTRIBUTE_PREFIX,
+  GEN_AI_MAIN_AGENT_CONVERSATION_ID_KEY,
+  GEN_AI_MAIN_AGENT_ID_KEY,
+  GEN_AI_MAIN_AGENT_NAME_KEY,
+  GEN_AI_MAIN_AGENT_VERSION_KEY,
+  GenAIMainAgentLogRecordProcessor,
+  GenAIMainAgentSpanProcessor,
+} from "./genai/mainAgent/index.js";

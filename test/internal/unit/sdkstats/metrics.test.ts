@@ -5,6 +5,22 @@ import { describe, it, beforeEach, expect } from "vitest";
 import { MeterProvider } from "@opentelemetry/sdk-metrics";
 
 import {
+  EXCEPTION_COUNT_NAME,
+  REQUEST_DURATION_NAME,
+  REQUEST_FAILURE_NAME,
+  REQUEST_SUCCESS_NAME,
+  RETRY_COUNT_NAME,
+  THROTTLE_COUNT_NAME,
+  _resetAllForTest as _resetNetworkStatsForTest,
+  recordDuration,
+  recordException,
+  recordFailure,
+  recordRetry,
+  recordSuccess,
+  recordThrottle,
+} from "../../../../src/sdkstats/networkStats.js";
+import { A365_ENDPOINT_CATEGORY, EXC_TIMEOUT } from "../../../../src/sdkstats/constants.js";
+import {
   FEATURE_TYPE_FEATURE,
   FEATURE_TYPE_INSTRUMENTATION,
   SdkStatsMetrics,
@@ -16,8 +32,8 @@ import {
 } from "../../../../src/sdkstats/state.js";
 import {
   MICROSOFT_OPENTELEMETRY_VERSION,
-  StatsbeatFeature,
-  StatsbeatInstrumentation,
+  SdkStatsFeature,
+  SdkStatsInstrumentation,
 } from "../../../../src/types.js";
 import { SdkStatsDistroFeature } from "../../../../src/sdkstats/state.js";
 
@@ -59,7 +75,7 @@ describe("sdkstats/metrics", () => {
   });
 
   it("emits a Feature observation with the OR'd feature bitmask and common dims", async () => {
-    setSdkStatsFeature(StatsbeatFeature.DISTRO);
+    setSdkStatsFeature(SdkStatsFeature.DISTRO);
     setSdkStatsFeature(SdkStatsDistroFeature.A365_EXPORT);
     setSdkStatsFeature(SdkStatsDistroFeature.OTLP_EXPORT);
 
@@ -92,7 +108,7 @@ describe("sdkstats/metrics", () => {
     expect(typeof point.attributes.os).toBe("string");
 
     const expectedBits =
-      StatsbeatFeature.DISTRO |
+      SdkStatsFeature.DISTRO |
       SdkStatsDistroFeature.A365_EXPORT |
       SdkStatsDistroFeature.OTLP_EXPORT;
     // Bitmask is sent as a string per spec (customDimensions are string-typed).
@@ -102,8 +118,8 @@ describe("sdkstats/metrics", () => {
   });
 
   it("emits a Feature.instrumentations observation tagged with type=1", async () => {
-    setSdkStatsInstrumentation(StatsbeatInstrumentation.MONGODB);
-    setSdkStatsInstrumentation(StatsbeatInstrumentation.REDIS);
+    setSdkStatsInstrumentation(SdkStatsInstrumentation.MONGODB);
+    setSdkStatsInstrumentation(SdkStatsInstrumentation.REDIS);
 
     const { PeriodicExportingMetricReader } = await import("@opentelemetry/sdk-metrics");
     const exporter = new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE);
@@ -125,14 +141,14 @@ describe("sdkstats/metrics", () => {
     const point = instrMetrics[0].dataPoints[0];
     expect(point.attributes.type).toBe(FEATURE_TYPE_INSTRUMENTATION);
     expect(point.attributes.feature).toBe(
-      String(StatsbeatInstrumentation.MONGODB | StatsbeatInstrumentation.REDIS),
+      String(SdkStatsInstrumentation.MONGODB | SdkStatsInstrumentation.REDIS),
     );
 
     await meterProvider.shutdown();
   });
 
   it("uses the supplied distro version when provided", async () => {
-    setSdkStatsFeature(StatsbeatFeature.DISTRO);
+    setSdkStatsFeature(SdkStatsFeature.DISTRO);
     const { PeriodicExportingMetricReader } = await import("@opentelemetry/sdk-metrics");
     const exporter = new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE);
     const reader = new PeriodicExportingMetricReader({
@@ -140,7 +156,7 @@ describe("sdkstats/metrics", () => {
       exportIntervalMillis: 60_000,
     });
     const meterProvider = new MeterProvider({ readers: [reader] });
-    new SdkStatsMetrics(meterProvider, "9.9.9-test");
+    new SdkStatsMetrics(meterProvider, { distroVersion: "9.9.9-test" });
 
     await meterProvider.forceFlush();
 
@@ -151,5 +167,136 @@ describe("sdkstats/metrics", () => {
     expect(featureMetric?.dataPoints[0]?.attributes.version).toBe("9.9.9-test");
 
     await meterProvider.shutdown();
+  });
+
+  describe("networkOnly mode", () => {
+    it("skips Feature/Feature.instrumentations gauges but still registers network gauges", async () => {
+      // Set bits that would normally trigger feature/instrumentation observations.
+      setSdkStatsFeature(SdkStatsFeature.DISTRO);
+      setSdkStatsInstrumentation(SdkStatsInstrumentation.MONGODB);
+      // Drop a network counter so a request_success_count observation will fire.
+      _resetNetworkStatsForTest();
+      recordSuccess(A365_ENDPOINT_CATEGORY, "contoso.example.com");
+
+      const { PeriodicExportingMetricReader } = await import("@opentelemetry/sdk-metrics");
+      const exporter = new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE);
+      const reader = new PeriodicExportingMetricReader({
+        exporter,
+        exportIntervalMillis: 60_000,
+      });
+      const meterProvider = new MeterProvider({ readers: [reader] });
+      new SdkStatsMetrics(meterProvider, { networkOnly: true });
+
+      await meterProvider.forceFlush();
+
+      const names = exporter
+        .getMetrics()
+        .flatMap((rm) => rm.scopeMetrics.flatMap((sm) => sm.metrics))
+        .map((m) => m.descriptor.name);
+
+      expect(names).not.toContain("Feature");
+      expect(names).not.toContain("Feature.instrumentations");
+      expect(names).toContain(REQUEST_SUCCESS_NAME);
+
+      await meterProvider.shutdown();
+      _resetNetworkStatsForTest();
+    });
+  });
+
+  describe("network gauges (default mode)", () => {
+    it("emits one observation per drained key, attaches endpoint + host, and clears after collection", async () => {
+      _resetNetworkStatsForTest();
+      recordSuccess(A365_ENDPOINT_CATEGORY, "a365.example.com");
+      recordSuccess(A365_ENDPOINT_CATEGORY, "a365.example.com");
+
+      const { PeriodicExportingMetricReader } = await import("@opentelemetry/sdk-metrics");
+      const exporter = new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE);
+      const reader = new PeriodicExportingMetricReader({
+        exporter,
+        exportIntervalMillis: 60_000,
+      });
+      const meterProvider = new MeterProvider({ readers: [reader] });
+      new SdkStatsMetrics(meterProvider);
+
+      await meterProvider.forceFlush();
+
+      const byName = (name: string) =>
+        exporter
+          .getMetrics()
+          .flatMap((rm) => rm.scopeMetrics.flatMap((sm) => sm.metrics))
+          .filter((m) => m.descriptor.name === name)
+          .flatMap((m) => m.dataPoints);
+
+      const success = byName(REQUEST_SUCCESS_NAME);
+      expect(success).toHaveLength(1);
+      expect(success[0].value).toBe(2);
+      expect(success[0].attributes.endpoint).toBe(A365_ENDPOINT_CATEGORY);
+      expect(success[0].attributes.host).toBe("a365.example.com");
+      expect(success[0].attributes.statusCode).toBeUndefined();
+
+      // Common dimensions per spec.
+      for (const dp of success) {
+        expect(dp.attributes.rp).toBe("unknown");
+        expect(dp.attributes.attach).toBe("Manual");
+        expect(dp.attributes.cikey).toBe("N/A");
+        expect(dp.attributes.language).toBe("node");
+      }
+
+      await meterProvider.shutdown();
+      _resetNetworkStatsForTest();
+    });
+
+    it("emits failure/retry/throttle/exception observations with the appropriate dimension and an avg duration", async () => {
+      _resetNetworkStatsForTest();
+      recordFailure(A365_ENDPOINT_CATEGORY, "westus", 404);
+      recordRetry(A365_ENDPOINT_CATEGORY, "westus", 503);
+      recordThrottle(A365_ENDPOINT_CATEGORY, "westus", 439);
+      recordException(A365_ENDPOINT_CATEGORY, "westus", EXC_TIMEOUT);
+      recordDuration(A365_ENDPOINT_CATEGORY, "westus", 100);
+      recordDuration(A365_ENDPOINT_CATEGORY, "westus", 200);
+
+      const { PeriodicExportingMetricReader } = await import("@opentelemetry/sdk-metrics");
+      const exporter = new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE);
+      const reader = new PeriodicExportingMetricReader({
+        exporter,
+        exportIntervalMillis: 60_000,
+      });
+      const meterProvider = new MeterProvider({ readers: [reader] });
+      new SdkStatsMetrics(meterProvider);
+
+      await meterProvider.forceFlush();
+
+      const byName = (name: string) =>
+        exporter
+          .getMetrics()
+          .flatMap((rm) => rm.scopeMetrics.flatMap((sm) => sm.metrics))
+          .filter((m) => m.descriptor.name === name)
+          .flatMap((m) => m.dataPoints);
+
+      const failures = byName(REQUEST_FAILURE_NAME);
+      expect(failures).toHaveLength(1);
+      expect(failures[0].attributes.statusCode).toBe("404");
+
+      const retries = byName(RETRY_COUNT_NAME);
+      expect(retries[0].attributes.statusCode).toBe("503");
+
+      const throttles = byName(THROTTLE_COUNT_NAME);
+      expect(throttles[0].attributes.statusCode).toBe("439");
+
+      const exceptions = byName(EXCEPTION_COUNT_NAME);
+      expect(exceptions[0].attributes.exceptionType).toBe(EXC_TIMEOUT);
+
+      const durations = byName(REQUEST_DURATION_NAME);
+      expect(durations).toHaveLength(1);
+      expect(durations[0].value).toBe(150);
+      expect(durations[0].attributes.endpoint).toBe(A365_ENDPOINT_CATEGORY);
+      expect(durations[0].attributes.host).toBe("westus");
+      // Duration has no statusCode / exceptionType dimension.
+      expect(durations[0].attributes.statusCode).toBeUndefined();
+      expect(durations[0].attributes.exceptionType).toBeUndefined();
+
+      await meterProvider.shutdown();
+      _resetNetworkStatsForTest();
+    });
   });
 });

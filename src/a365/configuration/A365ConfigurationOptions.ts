@@ -1,6 +1,9 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+import type { ContextualTokenResolver } from "../exporter/Agent365ExporterOptions.js";
+import type { Agent365DurableDeliveryOptions } from "../exporter/durable/index.js";
+
 /**
  * Cluster categories for A365 service endpoint resolution.
  * Mirrors the ClusterCategory enum from Agent365-nodejs.
@@ -33,12 +36,21 @@ export interface A365Options {
    * Token resolver for authenticating with the A365 observability service.
    * Called with (agentId, tenantId, authScopes) extracted from span attributes/config.
    * Must return a bearer token string or a promise resolving to one.
+   * When both this and {@link contextualTokenResolver} are set,
+   * {@link contextualTokenResolver} takes precedence.
    */
   tokenResolver?: (
     agentId: string,
     tenantId: string,
     authScopes?: string[],
   ) => string | Promise<string>;
+
+  /**
+   * Contextual token resolver for authenticating with the A365 observability service.
+   * Receives rich context including the agentic user ID.
+   * Takes precedence over {@link tokenResolver} when set.
+   */
+  contextualTokenResolver?: ContextualTokenResolver;
 
   /** Cluster category for the A365 service endpoint. */
   clusterCategory?: ClusterCategory;
@@ -54,7 +66,7 @@ export interface A365Options {
    *
    * Equivalent to the `A365_OBSERVABILITY_SCOPES_OVERRIDE` environment
    * variable; when supplied, it becomes the sole entry of the resolved
-   * {@link authScopes} array. Mirrors the Python distro's
+   * {@link authScopes} array. Mirrors the Python package's
    * `a365_observability_scope_override` kwarg
    * (microsoft/opentelemetry-distro-python#87).
    *
@@ -107,4 +119,7 @@ export interface A365Options {
 
   /** Maximum estimated payload size (bytes) per HTTP chunk. */
   maxPayloadBytes?: number;
+
+  /** Durable delivery options for local spool-and-replay behavior. */
+  durableDelivery?: Agent365DurableDeliveryOptions;
 }

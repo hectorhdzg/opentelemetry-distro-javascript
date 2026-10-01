@@ -1,11 +1,19 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import { afterEach, assert, beforeEach, describe, it, vi } from "vitest";
+import { afterEach, assert, beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { ExportResultCode } from "@opentelemetry/core";
 import { SpanKind, SpanStatusCode, TraceFlags } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import { Agent365Exporter } from "../../../../src/a365/exporter/Agent365Exporter.js";
+import { applicationPartition } from "../../../../src/a365/exporter/durable/PersistentStore.js";
+import {
+  DURABLE_RECORD_VERSION,
+  PersistentStore,
+} from "../../../../src/a365/exporter/durable/index.js";
 import {
   partitionByIdentity,
   parseIdentityKey,
@@ -25,6 +33,7 @@ import { configureA365Logger, _resetA365LoggerForTest } from "../../../../src/a3
 
 const TENANT_ID = "tenant-11111111-1111-1111-1111-111111111111";
 const AGENT_ID = "agent-22222222-2222-2222-2222-222222222222";
+const temporaryDirectories: string[] = [];
 
 function makeSpan(overrides: Partial<ReadableSpan> = {}): ReadableSpan {
   return {
@@ -59,12 +68,24 @@ function makeSpan(overrides: Partial<ReadableSpan> = {}): ReadableSpan {
 }
 
 /** Helper: export a single span and return the parsed payload attributes. */
+function createTestExporter(
+  options: ConstructorParameters<typeof Agent365Exporter>[0] = {},
+): Agent365Exporter {
+  return new Agent365Exporter({
+    ...options,
+    durableDelivery: {
+      enabled: false,
+      ...options.durableDelivery,
+    },
+  });
+}
+
 async function exportAndGetPayload(
   fetchSpy: ReturnType<typeof vi.fn>,
   attrs: Record<string, unknown>,
   exporterOptions?: ConstructorParameters<typeof Agent365Exporter>[0],
 ) {
-  const exporter = new Agent365Exporter({
+  const exporter = createTestExporter({
     tokenResolver: () => "tok",
     ...exporterOptions,
   });
@@ -87,6 +108,58 @@ async function exportAndGetPayload(
   return { result, exportedSpan, span, body };
 }
 
+async function createStorageDirectory(): Promise<string> {
+  const directory = await mkdtemp(join(tmpdir(), "a365-exporter-"));
+  temporaryDirectories.push(directory);
+  return directory;
+}
+
+function durableStorageRoot(directory: string): string {
+  return join(directory, applicationPartition());
+}
+
+async function durablePendingFiles(directory: string): Promise<string[]> {
+  try {
+    return (await readdir(durableStorageRoot(directory))).filter((name) =>
+      name.endsWith(".pending"),
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+}
+
+async function durablePendingCount(directory: string): Promise<number> {
+  return (await durablePendingFiles(directory)).length;
+}
+
+async function seedDurablePendingRecord(
+  directory: string,
+  fileName: string,
+  contents: string,
+): Promise<void> {
+  await mkdir(durableStorageRoot(directory), { recursive: true });
+  await writeFile(join(durableStorageRoot(directory), fileName), contents, "utf8");
+}
+
+async function exportResult(exporter: Agent365Exporter, spans: ReadableSpan[]): Promise<number> {
+  return new Promise<number>((resolve) => {
+    void exporter.export(spans, (result) => resolve(result.code));
+  });
+}
+
+async function waitFor(predicate: () => boolean, timeoutMilliseconds = 1_000): Promise<void> {
+  const deadline = Date.now() + timeoutMilliseconds;
+  while (!predicate()) {
+    if (Date.now() >= deadline) {
+      throw new Error("Timed out waiting for condition");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 describe("Agent365Exporter", () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
@@ -98,14 +171,19 @@ describe("Agent365Exporter", () => {
     vi.stubGlobal("fetch", fetchSpy);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await Promise.all(
+      temporaryDirectories
+        .splice(0)
+        .map((directory) => rm(directory, { recursive: true, force: true })),
+    );
     _resetA365LoggerForTest();
     vi.restoreAllMocks();
   });
 
   describe("export", () => {
     it("should return success immediately with no spans", async () => {
-      const exporter = new Agent365Exporter({
+      const exporter = createTestExporter({
         tokenResolver: () => "test-token",
       });
 
@@ -118,7 +196,7 @@ describe("Agent365Exporter", () => {
     });
 
     it("should export spans successfully", async () => {
-      const exporter = new Agent365Exporter({
+      const exporter = createTestExporter({
         tokenResolver: () => "test-token",
       });
 
@@ -140,7 +218,7 @@ describe("Agent365Exporter", () => {
 
     it("should use provided token resolver and set authorization header", async () => {
       const token = "abc123";
-      const exporter = new Agent365Exporter({
+      const exporter = createTestExporter({
         tokenResolver: () => token,
       });
 
@@ -170,7 +248,7 @@ describe("Agent365Exporter", () => {
     });
 
     it("should use async token resolver", async () => {
-      const exporter = new Agent365Exporter({
+      const exporter = createTestExporter({
         tokenResolver: async () => "async-token",
       });
 
@@ -184,7 +262,7 @@ describe("Agent365Exporter", () => {
     });
 
     it("should export to default prod endpoint", async () => {
-      const exporter = new Agent365Exporter({
+      const exporter = createTestExporter({
         tokenResolver: () => "tok-prod",
       });
 
@@ -198,7 +276,7 @@ describe("Agent365Exporter", () => {
     });
 
     it("should use S2S endpoint when configured", async () => {
-      const exporter = new Agent365Exporter({
+      const exporter = createTestExporter({
         tokenResolver: () => "test-token",
         useS2SEndpoint: true,
       });
@@ -213,7 +291,7 @@ describe("Agent365Exporter", () => {
     });
 
     it("should use S2S endpoint with domain override", async () => {
-      const exporter = new Agent365Exporter({
+      const exporter = createTestExporter({
         tokenResolver: () => "tok-s2s-custom",
         useS2SEndpoint: true,
         domainOverride: "https://custom.domain",
@@ -231,7 +309,7 @@ describe("Agent365Exporter", () => {
     });
 
     it("should use domain override when configured", async () => {
-      const exporter = new Agent365Exporter({
+      const exporter = createTestExporter({
         tokenResolver: () => "test-token",
         domainOverride: "https://custom.example.com",
       });
@@ -245,7 +323,7 @@ describe("Agent365Exporter", () => {
     });
 
     it("should skip export when no token resolver", async () => {
-      const exporter = new Agent365Exporter({});
+      const exporter = createTestExporter({});
 
       const result = await new Promise<number>((resolve) => {
         exporter.export([makeSpan()], (r) => resolve(r.code));
@@ -256,7 +334,7 @@ describe("Agent365Exporter", () => {
     });
 
     it("should skip spans missing identity attributes", async () => {
-      const exporter = new Agent365Exporter({
+      const exporter = createTestExporter({
         tokenResolver: () => "test-token",
       });
 
@@ -270,7 +348,7 @@ describe("Agent365Exporter", () => {
     });
 
     it("should skip spans missing only tenant ID", async () => {
-      const exporter = new Agent365Exporter({
+      const exporter = createTestExporter({
         tokenResolver: () => "test-token",
       });
 
@@ -284,7 +362,7 @@ describe("Agent365Exporter", () => {
     });
 
     it("should skip spans missing only agent ID", async () => {
-      const exporter = new Agent365Exporter({
+      const exporter = createTestExporter({
         tokenResolver: () => "test-token",
       });
 
@@ -298,7 +376,7 @@ describe("Agent365Exporter", () => {
     });
 
     it("should fail after shutdown", async () => {
-      const exporter = new Agent365Exporter({
+      const exporter = createTestExporter({
         tokenResolver: () => "test-token",
       });
 
@@ -312,7 +390,7 @@ describe("Agent365Exporter", () => {
     });
 
     it("should be idempotent on multiple shutdown calls", async () => {
-      const exporter = new Agent365Exporter({
+      const exporter = createTestExporter({
         tokenResolver: () => "test-token",
       });
 
@@ -327,7 +405,7 @@ describe("Agent365Exporter", () => {
     });
 
     it("should support forceFlush as a no-op", async () => {
-      const exporter = new Agent365Exporter({
+      const exporter = createTestExporter({
         tokenResolver: () => "test-token",
       });
       // Should not throw
@@ -335,7 +413,7 @@ describe("Agent365Exporter", () => {
     });
 
     it("should build correct OTLP payload", async () => {
-      const exporter = new Agent365Exporter({
+      const exporter = createTestExporter({
         tokenResolver: () => "test-token",
       });
 
@@ -374,8 +452,37 @@ describe("Agent365Exporter", () => {
       assert.deepStrictEqual(exportedSpan.attributes["number_array_attr"], [1, 2, 3]);
     });
 
+    it("should preserve GenAI request attributes in the A365 payload", async () => {
+      const { exportedSpan } = await exportAndGetPayload(fetchSpy, {
+        "gen_ai.output.type": "json",
+        "gen_ai.request.frequency_penalty": 0.1,
+        "gen_ai.request.max_tokens": 512,
+        "gen_ai.request.presence_penalty": -0.2,
+        "gen_ai.request.seed": 42,
+        "gen_ai.request.stop_sequences": ["DONE", "STOP"],
+        "gen_ai.request.stream": false,
+        "gen_ai.request.temperature": 0.2,
+        "gen_ai.request.top_k": 40,
+        "gen_ai.request.top_p": 0.8,
+      });
+
+      assert.strictEqual(exportedSpan.attributes["gen_ai.output.type"], "json");
+      assert.strictEqual(exportedSpan.attributes["gen_ai.request.frequency_penalty"], 0.1);
+      assert.strictEqual(exportedSpan.attributes["gen_ai.request.max_tokens"], 512);
+      assert.strictEqual(exportedSpan.attributes["gen_ai.request.presence_penalty"], -0.2);
+      assert.strictEqual(exportedSpan.attributes["gen_ai.request.seed"], 42);
+      assert.deepStrictEqual(exportedSpan.attributes["gen_ai.request.stop_sequences"], [
+        "DONE",
+        "STOP",
+      ]);
+      assert.strictEqual(exportedSpan.attributes["gen_ai.request.stream"], false);
+      assert.strictEqual(exportedSpan.attributes["gen_ai.request.temperature"], 0.2);
+      assert.strictEqual(exportedSpan.attributes["gen_ai.request.top_k"], 40);
+      assert.strictEqual(exportedSpan.attributes["gen_ai.request.top_p"], 0.8);
+    });
+
     it("should partition spans by identity and export separately", async () => {
-      const exporter = new Agent365Exporter({
+      const exporter = createTestExporter({
         tokenResolver: () => "test-token",
       });
 
@@ -412,7 +519,7 @@ describe("Agent365Exporter", () => {
         ],
       });
 
-      const exporter = new Agent365Exporter({ tokenResolver: () => "tok" });
+      const exporter = createTestExporter({ tokenResolver: () => "tok" });
       await new Promise<void>((resolve) => {
         exporter.export([span], () => resolve());
       });
@@ -438,7 +545,7 @@ describe("Agent365Exporter", () => {
         ],
       });
 
-      const exporter = new Agent365Exporter({ tokenResolver: () => "tok" });
+      const exporter = createTestExporter({ tokenResolver: () => "tok" });
       await new Promise<void>((resolve) => {
         exporter.export([span], () => resolve());
       });
@@ -458,7 +565,7 @@ describe("Agent365Exporter", () => {
         },
       });
 
-      const exporter = new Agent365Exporter({ tokenResolver: () => "tok" });
+      const exporter = createTestExporter({ tokenResolver: () => "tok" });
       await new Promise<void>((resolve) => {
         exporter.export([span], () => resolve());
       });
@@ -472,7 +579,7 @@ describe("Agent365Exporter", () => {
       const customTimeout = 12345;
       const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
 
-      const exporter = new Agent365Exporter({
+      const exporter = createTestExporter({
         tokenResolver: () => "tok",
         httpRequestTimeoutMilliseconds: customTimeout,
       });
@@ -493,7 +600,7 @@ describe("Agent365Exporter", () => {
       };
       configureA365Logger({ logger: customLogger, logLevel: "info|warn|error" });
 
-      const exporter = new Agent365Exporter({ tokenResolver: () => "tok" });
+      const exporter = createTestExporter({ tokenResolver: () => "tok" });
       await new Promise<void>((resolve) => {
         exporter.export([makeSpan()], () => resolve());
       });
@@ -530,7 +637,7 @@ describe("Agent365Exporter", () => {
       };
       configureA365Logger({ logger: customLogger, logLevel: "info|warn|error" });
 
-      const exporter = new Agent365Exporter({ tokenResolver: () => "tok" });
+      const exporter = createTestExporter({ tokenResolver: () => "tok" });
       const result = await new Promise<number>((resolve) => {
         exporter.export([makeSpan()], (r) => resolve(r.code));
       });
@@ -556,7 +663,7 @@ describe("Agent365Exporter", () => {
 
   describe("late-configured logger", () => {
     it("should emit event logs when logger is configured after exporter construction", async () => {
-      const exporter = new Agent365Exporter({ tokenResolver: () => "tok" });
+      const exporter = createTestExporter({ tokenResolver: () => "tok" });
 
       const customLogger = {
         info: vi.fn(),
@@ -606,7 +713,7 @@ describe("Agent365Exporter", () => {
         });
       });
 
-      const exporter = new Agent365Exporter({
+      const exporter = createTestExporter({
         tokenResolver: () => "test-token",
       });
 
@@ -634,7 +741,7 @@ describe("Agent365Exporter", () => {
         });
       });
 
-      const exporter = new Agent365Exporter({ tokenResolver: () => "tok" });
+      const exporter = createTestExporter({ tokenResolver: () => "tok" });
       const result = await new Promise<number>((resolve) => {
         exporter.export([makeSpan()], (r) => resolve(r.code));
       });
@@ -659,7 +766,7 @@ describe("Agent365Exporter", () => {
         });
       });
 
-      const exporter = new Agent365Exporter({ tokenResolver: () => "tok" });
+      const exporter = createTestExporter({ tokenResolver: () => "tok" });
       const result = await new Promise<number>((resolve) => {
         exporter.export([makeSpan()], (r) => resolve(r.code));
       });
@@ -678,7 +785,7 @@ describe("Agent365Exporter", () => {
         });
       });
 
-      const exporter = new Agent365Exporter({ tokenResolver: () => "tok" });
+      const exporter = createTestExporter({ tokenResolver: () => "tok" });
       const result = await new Promise<number>((resolve) => {
         exporter.export([makeSpan()], (r) => resolve(r.code));
       });
@@ -697,7 +804,7 @@ describe("Agent365Exporter", () => {
         });
       });
 
-      const exporter = new Agent365Exporter({ tokenResolver: () => "tok" });
+      const exporter = createTestExporter({ tokenResolver: () => "tok" });
       const result = await new Promise<number>((resolve) => {
         exporter.export([makeSpan()], (r) => resolve(r.code));
       });
@@ -719,7 +826,7 @@ describe("Agent365Exporter", () => {
         });
       });
 
-      const exporter = new Agent365Exporter({ tokenResolver: () => "tok" });
+      const exporter = createTestExporter({ tokenResolver: () => "tok" });
       const result = await new Promise<number>((resolve) => {
         exporter.export([makeSpan()], (r) => resolve(r.code));
       });
@@ -736,7 +843,7 @@ describe("Agent365Exporter", () => {
         }),
       );
 
-      const exporter = new Agent365Exporter({ tokenResolver: () => "tok" });
+      const exporter = createTestExporter({ tokenResolver: () => "tok" });
       const result = await new Promise<number>((resolve) => {
         exporter.export([makeSpan()], (r) => resolve(r.code));
       });
@@ -744,6 +851,925 @@ describe("Agent365Exporter", () => {
       assert.strictEqual(result, ExportResultCode.FAILED);
       // DEFAULT_MAX_RETRIES = 3, so 1 initial + 3 retries = 4 total
       assert.strictEqual(fetchSpy.mock.calls.length, 4);
+    });
+
+    it("should respect Retry-After header (seconds) on 429", async () => {
+      const sleepCalls: number[] = [];
+      vi.spyOn(globalThis, "setTimeout").mockImplementation(
+        (fn: (...args: unknown[]) => void, ms?: number) => {
+          if (ms && ms > 0) sleepCalls.push(ms);
+          // Execute immediately for test speed
+          fn();
+          return 0 as unknown as ReturnType<typeof setTimeout>;
+        },
+      );
+
+      let callCount = 0;
+      fetchSpy.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return Promise.resolve({
+            status: 429,
+            headers: new Map([
+              ["x-ms-correlation-id", "corr"],
+              ["retry-after", "5"],
+            ]),
+          });
+        }
+        return Promise.resolve({
+          status: 200,
+          headers: new Map([["x-ms-correlation-id", "corr"]]),
+        });
+      });
+
+      const exporter = createTestExporter({ tokenResolver: () => "tok" });
+      const result = await new Promise<number>((resolve) => {
+        exporter.export([makeSpan()], (r) => resolve(r.code));
+      });
+
+      assert.strictEqual(result, ExportResultCode.SUCCESS);
+      assert.strictEqual(callCount, 2);
+      // Retry-After of 5s = 5000ms, which exceeds the default backoff (~200-300ms)
+      assert.ok(
+        sleepCalls.some((ms) => ms >= 5000),
+        `Expected a sleep >= 5000ms, got: ${sleepCalls}`,
+      );
+    });
+
+    it("should respect Retry-After header (seconds) on 503", async () => {
+      const sleepCalls: number[] = [];
+      vi.spyOn(globalThis, "setTimeout").mockImplementation(
+        (fn: (...args: unknown[]) => void, ms?: number) => {
+          if (ms && ms > 0) sleepCalls.push(ms);
+          fn();
+          return 0 as unknown as ReturnType<typeof setTimeout>;
+        },
+      );
+
+      let callCount = 0;
+      fetchSpy.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return Promise.resolve({
+            status: 503,
+            headers: new Map([
+              ["x-ms-correlation-id", "corr"],
+              ["retry-after", "10"],
+            ]),
+          });
+        }
+        return Promise.resolve({
+          status: 200,
+          headers: new Map([["x-ms-correlation-id", "corr"]]),
+        });
+      });
+
+      const exporter = createTestExporter({ tokenResolver: () => "tok" });
+      const result = await new Promise<number>((resolve) => {
+        exporter.export([makeSpan()], (r) => resolve(r.code));
+      });
+
+      assert.strictEqual(result, ExportResultCode.SUCCESS);
+      assert.strictEqual(callCount, 2);
+      assert.ok(
+        sleepCalls.some((ms) => ms >= 10000),
+        `Expected a sleep >= 10000ms, got: ${sleepCalls}`,
+      );
+    });
+
+    it("should respect Retry-After header (HTTP-date format)", async () => {
+      // Pin Date.now() so the HTTP-date assertion is deterministic
+      const fakeNow = Date.now();
+      vi.spyOn(Date, "now").mockReturnValue(fakeNow);
+
+      const sleepCalls: number[] = [];
+      vi.spyOn(globalThis, "setTimeout").mockImplementation(
+        (fn: (...args: unknown[]) => void, ms?: number) => {
+          if (ms && ms > 0) sleepCalls.push(ms);
+          fn();
+          return 0 as unknown as ReturnType<typeof setTimeout>;
+        },
+      );
+
+      // Set Retry-After to 8 seconds from the pinned "now"
+      const futureDate = new Date(fakeNow + 8000).toUTCString();
+
+      let callCount = 0;
+      fetchSpy.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return Promise.resolve({
+            status: 429,
+            headers: new Map([
+              ["x-ms-correlation-id", "corr"],
+              ["retry-after", futureDate],
+            ]),
+          });
+        }
+        return Promise.resolve({
+          status: 200,
+          headers: new Map([["x-ms-correlation-id", "corr"]]),
+        });
+      });
+
+      const exporter = createTestExporter({ tokenResolver: () => "tok" });
+      const result = await new Promise<number>((resolve) => {
+        exporter.export([makeSpan()], (r) => resolve(r.code));
+      });
+
+      assert.strictEqual(result, ExportResultCode.SUCCESS);
+      assert.strictEqual(callCount, 2);
+      // toUTCString() has second-level precision so parsed delay can be 7000-8000ms;
+      // verify it lands in the expected range rather than matching some unrelated default.
+      assert.ok(
+        sleepCalls.some((ms) => ms >= 7000 && ms <= 9000),
+        `Expected a sleep in 7000-9000ms range, got: ${sleepCalls}`,
+      );
+    });
+
+    it("should use default backoff when Retry-After header is absent", async () => {
+      const sleepCalls: number[] = [];
+      vi.spyOn(globalThis, "setTimeout").mockImplementation(
+        (fn: (...args: unknown[]) => void, ms?: number) => {
+          if (ms && ms > 0) sleepCalls.push(ms);
+          fn();
+          return 0 as unknown as ReturnType<typeof setTimeout>;
+        },
+      );
+
+      let callCount = 0;
+      fetchSpy.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return Promise.resolve({
+            status: 429,
+            headers: new Map([["x-ms-correlation-id", "corr"]]),
+          });
+        }
+        return Promise.resolve({
+          status: 200,
+          headers: new Map([["x-ms-correlation-id", "corr"]]),
+        });
+      });
+
+      const exporter = createTestExporter({ tokenResolver: () => "tok" });
+      const result = await new Promise<number>((resolve) => {
+        exporter.export([makeSpan()], (r) => resolve(r.code));
+      });
+
+      assert.strictEqual(result, ExportResultCode.SUCCESS);
+      assert.strictEqual(callCount, 2);
+      // Default backoff for attempt 0 is 200 * 1 + random(0-99) = 200-299ms
+      assert.ok(
+        sleepCalls.every((ms) => ms < 1000),
+        `Expected default backoff < 1000ms, got: ${sleepCalls}`,
+      );
+    });
+  });
+
+  it("exports ApplyGuardrailScope span with all guardrail attributes and finding event", async () => {
+    const exporter = createTestExporter({
+      tokenResolver: () => "tok-guardrail",
+    });
+
+    const spans = [
+      makeSpan({
+        name: "apply_guardrail Azure Content Safety llm_input",
+        attributes: {
+          "gen_ai.operation.name": "apply_guardrail",
+          "microsoft.tenant.id": TENANT_ID,
+          "gen_ai.agent.id": AGENT_ID,
+          "gen_ai.agent.name": "Guardrail Agent",
+          // Guardian attributes
+          "microsoft.guardian.id": "azure-content-safety-001",
+          "microsoft.guardian.name": "Azure Content Safety",
+          "microsoft.guardian.provider.name": "Azure",
+          "microsoft.guardian.version": "2.0.0",
+          // Decision attributes
+          "microsoft.security.decision.type": "deny",
+          "microsoft.security.target.type": "llm_input",
+          "microsoft.security.target.id": "msg-12345",
+          "microsoft.security.decision.reason": "Content violates hate speech policy",
+          "microsoft.security.decision.code": "HATE_SPEECH_001",
+          // Policy attributes
+          "microsoft.security.policy.id": "policy-abc",
+          "microsoft.security.policy.name": "Content Safety Policy",
+          "microsoft.security.policy.version": "1.2.0",
+          // Content attributes
+          "microsoft.security.content.input.hash": "sha256:abc123def456",
+          "microsoft.security.content.modified": false,
+          "microsoft.security.content.output.value": "sanitized-hash-output",
+          "microsoft.security.external_event_id": "ext-event-789",
+        },
+        events: [
+          {
+            name: "microsoft.security.finding",
+            time: [Math.floor(Date.now() / 1000), 0],
+            attributes: {
+              "microsoft.security.risk.category": "hate_speech",
+              "microsoft.security.risk.severity": "high",
+              "microsoft.security.policy.decision.type": "deny",
+              "microsoft.security.policy.id": "policy-abc",
+              "microsoft.security.risk.score": 0.95,
+            },
+          },
+        ],
+      }),
+    ];
+
+    const result = await new Promise<number>((resolve) => {
+      exporter.export(spans, (r) => resolve(r.code));
+    });
+    assert.strictEqual(result, ExportResultCode.SUCCESS);
+    assert.strictEqual(fetchSpy.mock.calls.length, 1);
+
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    const exportedSpan = body.resourceSpans[0].scopeSpans[0].spans[0];
+
+    // Verify span name
+    assert.strictEqual(exportedSpan.name, "apply_guardrail Azure Content Safety llm_input");
+
+    // Verify guardrail attributes survived export
+    assert.strictEqual(
+      exportedSpan.attributes["microsoft.guardian.id"],
+      "azure-content-safety-001",
+    );
+    assert.strictEqual(exportedSpan.attributes["microsoft.guardian.name"], "Azure Content Safety");
+    assert.strictEqual(exportedSpan.attributes["microsoft.security.decision.type"], "deny");
+    assert.strictEqual(exportedSpan.attributes["microsoft.security.target.type"], "llm_input");
+    assert.strictEqual(exportedSpan.attributes["microsoft.security.policy.id"], "policy-abc");
+    assert.strictEqual(
+      exportedSpan.attributes["microsoft.security.content.input.hash"],
+      "sha256:abc123def456",
+    );
+    assert.strictEqual(exportedSpan.attributes["microsoft.security.content.modified"], false);
+    assert.strictEqual(
+      exportedSpan.attributes["microsoft.security.content.output.value"],
+      "sanitized-hash-output",
+    );
+    assert.strictEqual(
+      exportedSpan.attributes["microsoft.security.external_event_id"],
+      "ext-event-789",
+    );
+
+    // Verify finding event survived export
+    assert.strictEqual(exportedSpan.events.length, 1);
+    assert.strictEqual(exportedSpan.events[0].name, "microsoft.security.finding");
+    assert.strictEqual(
+      exportedSpan.events[0].attributes["microsoft.security.risk.category"],
+      "hate_speech",
+    );
+    assert.strictEqual(
+      exportedSpan.events[0].attributes["microsoft.security.risk.severity"],
+      "high",
+    );
+    assert.strictEqual(exportedSpan.events[0].attributes["microsoft.security.risk.score"], 0.95);
+  });
+
+  describe("getBufferConfig", () => {
+    it("returns the A365 exporter defaults when no batching options are supplied", () => {
+      const exporter = createTestExporter({ tokenResolver: () => "tok" });
+      assert.deepStrictEqual(exporter.getBufferConfig(), {
+        maxQueueSize: 2048,
+        scheduledDelayMillis: 5000,
+        maxExportBatchSize: 512,
+        exportTimeoutMillis: 90000,
+      });
+    });
+
+    it("honors caller-supplied values while keeping A365 defaults for the rest", () => {
+      const exporter = createTestExporter({
+        tokenResolver: () => "tok",
+        maxQueueSize: 4096,
+      });
+      assert.deepStrictEqual(exporter.getBufferConfig(), {
+        maxQueueSize: 4096,
+        scheduledDelayMillis: 5000,
+        maxExportBatchSize: 512,
+        exportTimeoutMillis: 90000,
+      });
+    });
+
+    it("maps every supported A365 option to the corresponding BufferConfig key", () => {
+      const exporter = createTestExporter({
+        tokenResolver: () => "tok",
+        maxQueueSize: 4096,
+        scheduledDelayMilliseconds: 1234,
+        maxExportBatchSize: 256,
+        exporterTimeoutMilliseconds: 45000,
+      });
+      assert.deepStrictEqual(exporter.getBufferConfig(), {
+        maxQueueSize: 4096,
+        scheduledDelayMillis: 1234,
+        maxExportBatchSize: 256,
+        exportTimeoutMillis: 45000,
+      });
+    });
+
+    it("returns an independent object on each call so callers cannot mutate internal state", () => {
+      const exporter = createTestExporter({
+        tokenResolver: () => "tok",
+        maxQueueSize: 4096,
+      });
+      const first = exporter.getBufferConfig();
+      first.maxQueueSize = 1;
+      assert.strictEqual(exporter.getBufferConfig().maxQueueSize, 4096);
+    });
+  });
+
+  it("waits for an accepted network-only export to settle during shutdown", async () => {
+    let notifyRequestStarted: (() => void) | undefined;
+    const requestStarted = new Promise<void>((resolve) => {
+      notifyRequestStarted = resolve;
+    });
+    let resolveFetch: ((value: { status: number; headers: Headers }) => void) | undefined;
+    fetchSpy.mockImplementation(() => {
+      notifyRequestStarted!();
+      return new Promise((resolve) => {
+        resolveFetch = resolve;
+      });
+    });
+    const exporter = createTestExporter({
+      tokenResolver: () => "token",
+      durableDelivery: { enabled: false, shutdownTimeoutMilliseconds: 50 },
+    });
+
+    const result = exportResult(exporter, [makeSpan()]);
+    await requestStarted;
+
+    let shutdownSettled = false;
+    const shutdown = exporter.shutdown().finally(() => {
+      shutdownSettled = true;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.isFalse(shutdownSettled);
+
+    resolveFetch!({ status: 200, headers: new Headers() });
+
+    await expect(shutdown).resolves.toBeUndefined();
+    assert.isTrue(shutdownSettled);
+    assert.strictEqual(await result, ExportResultCode.SUCCESS);
+  });
+
+  it("rejects network-only shutdown after the shared deadline when an accepted export never settles", async () => {
+    vi.useFakeTimers();
+    try {
+      let notifyRequestStarted: (() => void) | undefined;
+      const requestStarted = new Promise<void>((resolve) => {
+        notifyRequestStarted = resolve;
+      });
+      let resolveFetch: ((value: { status: number; headers: Headers }) => void) | undefined;
+      fetchSpy.mockImplementation(() => {
+        notifyRequestStarted!();
+        return new Promise((resolve) => {
+          resolveFetch = resolve;
+        });
+      });
+      const exporter = createTestExporter({
+        tokenResolver: () => "token",
+        httpRequestTimeoutMilliseconds: 1,
+        durableDelivery: { enabled: false, shutdownTimeoutMilliseconds: 5 },
+      });
+
+      const result = exportResult(exporter, [makeSpan()]);
+      await requestStarted;
+
+      const shutdown = exporter.shutdown().then(
+        () => ({ status: "resolved" as const }),
+        (error) => ({ status: "rejected" as const, error }),
+      );
+      await vi.advanceTimersByTimeAsync(5);
+
+      const shutdownResult = await shutdown;
+      assert.strictEqual(shutdownResult.status, "rejected");
+      if (shutdownResult.status !== "rejected") {
+        assert.fail("Expected shutdown to reject");
+      }
+      assert.instanceOf(shutdownResult.error, Error);
+      assert.match(shutdownResult.error.message, /exporter shutdown timed out/i);
+      assert.match(shutdownResult.error.message, /accepted exports to settle/i);
+      assert.notInclude(shutdownResult.error.message, "durable delivery");
+
+      resolveFetch!({ status: 200, headers: new Headers() });
+      await expect(result).resolves.toBe(ExportResultCode.SUCCESS);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  describe("durable delivery", () => {
+    it("hands a retryable failure to durable storage after one attempt", async () => {
+      const directory = await createStorageDirectory();
+      fetchSpy.mockResolvedValue({
+        status: 503,
+        headers: new Headers({ "retry-after": "60" }),
+      });
+      const exporter = new Agent365Exporter({
+        tokenResolver: () => "durable-token",
+        durableDelivery: { enabled: true, storageDirectory: directory },
+      });
+
+      const result = await exportResult(exporter, [makeSpan()]);
+      const pending = await durablePendingFiles(directory);
+
+      assert.strictEqual(result, ExportResultCode.SUCCESS);
+      assert.strictEqual(fetchSpy.mock.calls.length, 1);
+      assert.strictEqual(pending.length, 1);
+      assert.notInclude(
+        await readFile(join(durableStorageRoot(directory), pending[0]), "utf8"),
+        "durable-token",
+      );
+      await exporter.shutdown();
+    });
+
+    it("persists a durable record after an HTTP 401 response", async () => {
+      const directory = await createStorageDirectory();
+      fetchSpy.mockResolvedValue({
+        status: 401,
+        headers: new Headers(),
+      });
+      const exporter = new Agent365Exporter({
+        tokenResolver: () => "durable-token",
+        durableDelivery: { enabled: true, storageDirectory: directory },
+      });
+
+      const result = await exportResult(exporter, [makeSpan()]);
+      const pending = await durablePendingFiles(directory);
+
+      assert.strictEqual(result, ExportResultCode.SUCCESS);
+      assert.strictEqual(fetchSpy.mock.calls.length, 1);
+      assert.strictEqual(pending.length, 1);
+      await exporter.shutdown();
+    });
+
+    it("persists one durable record for each serialized chunk", async () => {
+      const directory = await createStorageDirectory();
+      fetchSpy.mockResolvedValue({
+        status: 503,
+        headers: new Headers(),
+      });
+      const exporter = new Agent365Exporter({
+        tokenResolver: () => "token",
+        maxPayloadBytes: 1,
+        durableDelivery: { enabled: true, storageDirectory: directory },
+      });
+
+      const result = await exportResult(exporter, [makeSpan(), makeSpan({ name: "second-span" })]);
+      const pending = await durablePendingFiles(directory);
+
+      assert.strictEqual(result, ExportResultCode.SUCCESS);
+      assert.strictEqual(fetchSpy.mock.calls.length, 1);
+      assert.strictEqual(pending.length, 2);
+      await exporter.shutdown();
+    });
+
+    it("fails when durable persistence fails but still handles another identity", async () => {
+      const directory = await createStorageDirectory();
+      fetchSpy.mockResolvedValue({
+        status: 503,
+        headers: new Headers(),
+      });
+      const exporter = new Agent365Exporter({
+        tokenResolver: () => "token",
+        durableDelivery: {
+          enabled: true,
+          storageDirectory: directory,
+          maxStorageBytes: 4096,
+        },
+      });
+      const oversizedFirstIdentity = makeSpan({
+        attributes: {
+          "microsoft.tenant.id": "tenant-first",
+          "gen_ai.agent.id": "agent-first",
+          "gen_ai.operation.name": "invoke_agent",
+          oversized: "x".repeat(10_000),
+        },
+      });
+      const secondIdentity = makeSpan({
+        attributes: {
+          "microsoft.tenant.id": "tenant-second",
+          "gen_ai.agent.id": "agent-second",
+          "gen_ai.operation.name": "invoke_agent",
+        },
+      });
+
+      const result = await exportResult(exporter, [oversizedFirstIdentity, secondIdentity]);
+      const pending = await durablePendingFiles(directory);
+
+      assert.strictEqual(result, ExportResultCode.FAILED);
+      assert.strictEqual(fetchSpy.mock.calls.length, 2);
+      assert.strictEqual(pending.length, 1);
+      await exporter.shutdown();
+    });
+
+    it("persists for replay when a durable export has no token", async () => {
+      const directory = await createStorageDirectory();
+      const exporter = new Agent365Exporter({
+        tokenResolver: () => null,
+        durableDelivery: { enabled: true, storageDirectory: directory },
+      });
+
+      const result = await exportResult(exporter, [makeSpan()]);
+
+      assert.strictEqual(result, ExportResultCode.SUCCESS);
+      assert.strictEqual(fetchSpy.mock.calls.length, 0);
+      assert.strictEqual(await durablePendingCount(directory), 1);
+      await exporter.shutdown();
+    });
+
+    it("warns and still sends durable live exports to a non-HTTPS endpoint", async () => {
+      const directory = await createStorageDirectory();
+      const customLogger = {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      };
+      configureA365Logger({ logger: customLogger, logLevel: "info|warn|error" });
+
+      const exporter = new Agent365Exporter({
+        tokenResolver: () => "token",
+        domainOverride: "http://plaintext.example.com",
+        durableDelivery: { enabled: true, storageDirectory: directory },
+      });
+
+      const result = await exportResult(exporter, [makeSpan()]);
+
+      assert.strictEqual(result, ExportResultCode.SUCCESS);
+      assert.strictEqual(fetchSpy.mock.calls.length, 1);
+      const [url, options] = fetchSpy.mock.calls[0];
+      assert.ok(url.startsWith("http://plaintext.example.com/observability/tenants/"));
+      assert.strictEqual(options.headers.authorization, "Bearer token");
+      assert.strictEqual(await durablePendingCount(directory), 0);
+      assert.ok(
+        customLogger.warn.mock.calls.some((call) =>
+          String(call[0]).includes("must use HTTPS before sending a bearer token"),
+        ),
+      );
+      await exporter.shutdown();
+    });
+
+    it("fails without persisting after a durable permanent response", async () => {
+      const directory = await createStorageDirectory();
+      fetchSpy.mockResolvedValue({
+        status: 400,
+        headers: new Headers(),
+      });
+      const exporter = new Agent365Exporter({
+        tokenResolver: () => "token",
+        durableDelivery: { enabled: true, storageDirectory: directory },
+      });
+
+      const result = await exportResult(exporter, [makeSpan()]);
+
+      assert.strictEqual(result, ExportResultCode.FAILED);
+      assert.strictEqual(fetchSpy.mock.calls.length, 1);
+      assert.isEmpty(await durablePendingFiles(directory));
+      await exporter.shutdown();
+    });
+
+    it("replays persisted records with a fresh token after exporter restart without forceFlush", async () => {
+      const directory = await createStorageDirectory();
+      fetchSpy.mockResolvedValueOnce({
+        status: 503,
+        headers: new Headers(),
+      });
+      const failingExporter = new Agent365Exporter({
+        tokenResolver: () => "initial-token",
+        durableDelivery: { enabled: true, storageDirectory: directory },
+      });
+
+      assert.strictEqual(
+        await exportResult(failingExporter, [makeSpan()]),
+        ExportResultCode.SUCCESS,
+      );
+      await failingExporter.shutdown();
+
+      fetchSpy.mockClear();
+      fetchSpy.mockResolvedValue({
+        status: 200,
+        headers: new Headers(),
+      });
+      const freshToken = "fresh-token";
+      const resolver = vi.fn().mockResolvedValue(freshToken);
+      const restartedExporter = new Agent365Exporter({
+        tokenResolver: resolver,
+        durableDelivery: {
+          enabled: true,
+          storageDirectory: directory,
+          replayIntervalMilliseconds: 5,
+        },
+      });
+
+      await waitFor(() => fetchSpy.mock.calls.length === 1);
+
+      assert.strictEqual(resolver.mock.calls.length, 1);
+      assert.strictEqual(fetchSpy.mock.calls.length, 1);
+      assert.strictEqual(
+        fetchSpy.mock.calls[0][1].headers.authorization,
+        ["Bearer", freshToken].join(" "),
+      );
+      assert.isEmpty(await durablePendingFiles(directory));
+      await restartedExporter.shutdown();
+    });
+
+    it.each([
+      {
+        label: "a non-HTTPS current domain override",
+        domainOverride: "http://plaintext.example.com",
+        expectedWarning: "Replay endpoint must use HTTPS before resolving a bearer token",
+      },
+      {
+        label: "a malformed current domain override",
+        domainOverride: "not a url",
+        expectedWarning: "Replay endpoint is invalid or malformed before resolving a bearer token",
+      },
+    ])(
+      "retains replay records and skips token resolution for %s",
+      async ({ domainOverride, expectedWarning }) => {
+        const directory = await createStorageDirectory();
+        const customLogger = {
+          info: vi.fn(),
+          warn: vi.fn(),
+          error: vi.fn(),
+        };
+        configureA365Logger({ logger: customLogger, logLevel: "info|warn|error" });
+
+        const legacyRecord = {
+          version: DURABLE_RECORD_VERSION,
+          id: "legacy-record",
+          createdAt: 1_725_000_000_000,
+          tenantId: TENANT_ID,
+          agentId: AGENT_ID,
+          agenticUserId: "legacy-user",
+          clusterCategory: "prod",
+          domainOverride: "https://legacy.example.com",
+          useS2SEndpoint: false,
+          body: '{"resourceSpans":[]}',
+        };
+        await seedDurablePendingRecord(
+          directory,
+          `${legacyRecord.createdAt}-${legacyRecord.id}.pending`,
+          JSON.stringify(legacyRecord),
+        );
+
+        const resolver = vi.fn().mockResolvedValue("fresh-token");
+        const exporter = new Agent365Exporter({
+          tokenResolver: resolver,
+          domainOverride,
+          durableDelivery: {
+            enabled: true,
+            storageDirectory: directory,
+            replayIntervalMilliseconds: 60_000,
+          },
+        });
+
+        await exporter.forceFlush();
+
+        assert.strictEqual(resolver.mock.calls.length, 0);
+        assert.strictEqual(fetchSpy.mock.calls.length, 0);
+        assert.strictEqual(await durablePendingCount(directory), 1);
+        assert.ok(
+          customLogger.warn.mock.calls.some((call) => String(call[0]).includes(expectedWarning)),
+        );
+        await exporter.shutdown();
+      },
+    );
+
+    it("replays legacy records with the current domain override", async () => {
+      const directory = await createStorageDirectory();
+      const legacyRecord = {
+        version: DURABLE_RECORD_VERSION,
+        id: "legacy-record",
+        createdAt: 1_725_000_000_000,
+        tenantId: TENANT_ID,
+        agentId: AGENT_ID,
+        agenticUserId: "legacy-user",
+        clusterCategory: "prod",
+        domainOverride: "https://legacy.example.com",
+        useS2SEndpoint: false,
+        body: '{"resourceSpans":[]}',
+      };
+      await seedDurablePendingRecord(
+        directory,
+        `${legacyRecord.createdAt}-${legacyRecord.id}.pending`,
+        JSON.stringify(legacyRecord),
+      );
+
+      fetchSpy.mockResolvedValue({
+        status: 200,
+        headers: new Headers(),
+      });
+      const freshToken = "fresh-token";
+      const restartedExporter = new Agent365Exporter({
+        tokenResolver: () => freshToken,
+        domainOverride: "https://current.example.com",
+        durableDelivery: {
+          enabled: true,
+          storageDirectory: directory,
+          replayIntervalMilliseconds: 5,
+        },
+      });
+
+      await waitFor(() => fetchSpy.mock.calls.length === 1);
+
+      const [url, options] = fetchSpy.mock.calls[0];
+      assert.ok(url.startsWith("https://current.example.com/observability/tenants/"));
+      assert.notInclude(url, "legacy.example.com");
+      assert.strictEqual(options.headers.authorization, ["Bearer", freshToken].join(" "));
+      assert.isEmpty(await durablePendingFiles(directory));
+      await restartedExporter.shutdown();
+    });
+
+    it("warns and still sends network-only live exports to a non-HTTPS endpoint", async () => {
+      const customLogger = {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      };
+      configureA365Logger({ logger: customLogger, logLevel: "info|warn|error" });
+
+      const exporter = createTestExporter({
+        tokenResolver: () => "token",
+        domainOverride: "http://plaintext.example.com",
+      });
+
+      const result = await exportResult(exporter, [makeSpan()]);
+
+      assert.strictEqual(result, ExportResultCode.SUCCESS);
+      assert.strictEqual(fetchSpy.mock.calls.length, 1);
+      const [url, options] = fetchSpy.mock.calls[0];
+      assert.ok(url.startsWith("http://plaintext.example.com/observability/tenants/"));
+      assert.strictEqual(options.headers.authorization, "Bearer token");
+      assert.ok(
+        customLogger.warn.mock.calls.some((call) =>
+          String(call[0]).includes("must use HTTPS before sending a bearer token"),
+        ),
+      );
+      await exporter.shutdown();
+    });
+
+    it("preserves every admitted chunk when shutdown aborts a multi-chunk export", async () => {
+      const directory = await createStorageDirectory();
+      let signal: AbortSignal | undefined;
+      let notifyRequestStarted: (() => void) | undefined;
+      const requestStarted = new Promise<void>((resolve) => {
+        notifyRequestStarted = resolve;
+      });
+      let requestCount = 0;
+      fetchSpy.mockImplementation((_url, request) => {
+        requestCount += 1;
+        if (requestCount > 1) {
+          return Promise.resolve({ status: 503, headers: new Headers() });
+        }
+
+        signal = request.signal as AbortSignal;
+        notifyRequestStarted!();
+        return new Promise((_resolve, reject) => {
+          signal!.addEventListener(
+            "abort",
+            () => reject(Object.assign(new Error("request aborted"), { name: "AbortError" })),
+            { once: true },
+          );
+        });
+      });
+      const exporter = new Agent365Exporter({
+        tokenResolver: () => "token",
+        maxPayloadBytes: 1,
+        durableDelivery: { enabled: true, storageDirectory: directory },
+      });
+      const result = exportResult(exporter, [makeSpan(), makeSpan({ name: "second-span" })]);
+
+      await requestStarted;
+      await exporter.shutdown();
+
+      assert.isTrue(signal!.aborted);
+      assert.strictEqual(await result, ExportResultCode.SUCCESS);
+      assert.strictEqual(await durablePendingCount(directory), 2);
+    });
+
+    it("does not initialize durable delivery after shutdown", async () => {
+      const directory = await createStorageDirectory();
+      const exporter = new Agent365Exporter({
+        tokenResolver: () => "token",
+        durableDelivery: { enabled: true, storageDirectory: directory },
+      });
+
+      await exporter.shutdown();
+
+      const getDurableManager = (exporter as unknown as { getDurableManager(): Promise<unknown> })
+        .getDurableManager;
+      await expect(getDurableManager.call(exporter)).rejects.toThrow(/shut down/);
+    });
+
+    it("falls back to network delivery when durable initialization fails and the export succeeds", async () => {
+      vi.spyOn(PersistentStore, "create").mockRejectedValue(new Error("disk unavailable"));
+      const exporter = new Agent365Exporter({
+        tokenResolver: () => "token",
+        durableDelivery: { enabled: true },
+      });
+
+      const result = exportResult(exporter, [makeSpan()]);
+      await exporter.forceFlush();
+
+      assert.strictEqual(await result, ExportResultCode.SUCCESS);
+      assert.strictEqual(fetchSpy.mock.calls.length, 1);
+      await exporter.shutdown();
+    });
+
+    it("fails retryable exports when durable initialization fails and records cannot be persisted", async () => {
+      vi.spyOn(PersistentStore, "create").mockRejectedValue(new Error("disk unavailable"));
+      fetchSpy.mockResolvedValue({
+        status: 503,
+        headers: new Headers(),
+      });
+      const exporter = new Agent365Exporter({
+        tokenResolver: () => "token",
+        durableDelivery: { enabled: true },
+      });
+
+      assert.strictEqual(await exportResult(exporter, [makeSpan()]), ExportResultCode.FAILED);
+      assert.isAtLeast(fetchSpy.mock.calls.length, 1);
+      await exporter.shutdown();
+    });
+
+    it("aborts an in-flight durable request during shutdown", async () => {
+      const directory = await createStorageDirectory();
+      let signal: AbortSignal | undefined;
+      let notifyRequestStarted: (() => void) | undefined;
+      const requestStarted = new Promise<void>((resolve) => {
+        notifyRequestStarted = resolve;
+      });
+      fetchSpy.mockImplementation((_url, request) => {
+        signal = request.signal as AbortSignal;
+        notifyRequestStarted!();
+        return new Promise((_resolve, reject) => {
+          signal!.addEventListener(
+            "abort",
+            () => reject(Object.assign(new Error("request aborted"), { name: "AbortError" })),
+            { once: true },
+          );
+        });
+      });
+      const exporter = new Agent365Exporter({
+        tokenResolver: () => "token",
+        durableDelivery: { enabled: true, storageDirectory: directory },
+      });
+      const result = exportResult(exporter, [makeSpan()]);
+
+      await requestStarted;
+      await exporter.shutdown();
+
+      assert.isTrue(signal!.aborted);
+      assert.strictEqual(await result, ExportResultCode.SUCCESS);
+      assert.strictEqual(await durablePendingCount(directory), 1);
+    });
+
+    it("rejects shutdown after the durable deadline when an in-flight request ignores abort", async () => {
+      const directory = await createStorageDirectory();
+      let notifyRequestStarted: (() => void) | undefined;
+      const requestStarted = new Promise<void>((resolve) => {
+        notifyRequestStarted = resolve;
+      });
+      fetchSpy.mockImplementation(() => {
+        notifyRequestStarted!();
+        return new Promise(() => {});
+      });
+      const exporter = new Agent365Exporter({
+        tokenResolver: () => "token",
+        httpRequestTimeoutMilliseconds: 1,
+        durableDelivery: {
+          enabled: true,
+          storageDirectory: directory,
+          shutdownTimeoutMilliseconds: 5,
+        },
+      });
+      void exportResult(exporter, [makeSpan()]);
+
+      await requestStarted;
+      let shutdownError: unknown;
+      try {
+        await exporter.shutdown();
+      } catch (error) {
+        shutdownError = error;
+      }
+
+      assert.instanceOf(shutdownError, Error);
+      assert.match((shutdownError as Error).message, /shutdown timed out/);
+    });
+
+    it("is idempotent after completed durable shutdown", async () => {
+      const directory = await createStorageDirectory();
+      const exporter = new Agent365Exporter({
+        tokenResolver: () => "token",
+        durableDelivery: { enabled: true, storageDirectory: directory },
+      });
+
+      await exporter.shutdown();
+      await exporter.shutdown();
+
+      assert.strictEqual(await exportResult(exporter, [makeSpan()]), ExportResultCode.FAILED);
     });
   });
 });
@@ -1056,18 +2082,15 @@ describe("Exporter utils", () => {
 
     it("should truncate blob parts in message attributes", () => {
       const blobContent = "b".repeat(MAX_SPAN_SIZE_BYTES);
-      const messageWrapper = JSON.stringify({
-        version: "1.0",
-        messages: [
-          {
-            role: "user",
-            parts: [
-              { type: "blob", modality: "image", mime_type: "image/png", content: blobContent },
-              { type: "text", content: "Keep this text" },
-            ],
-          },
-        ],
-      });
+      const messageWrapper = JSON.stringify([
+        {
+          role: "user",
+          parts: [
+            { type: "blob", modality: "image", mime_type: "image/png", content: blobContent },
+            { type: "text", content: "Keep this text" },
+          ],
+        },
+      ]);
       const span = {
         attributes: {
           "gen_ai.input.messages": messageWrapper,
@@ -1078,80 +2101,71 @@ describe("Exporter utils", () => {
       const size = Buffer.byteLength(JSON.stringify(result), "utf8");
       assert.ok(size <= MAX_SPAN_SIZE_BYTES);
       const parsed = JSON.parse(result.attributes!["gen_ai.input.messages"] as string);
-      assert.strictEqual(parsed.messages[0].parts[0].content, "[blob truncated]");
-      assert.strictEqual(parsed.messages[0].parts[1].content, "Keep this text");
+      assert.strictEqual(parsed[0].parts[0].content, "[blob truncated]");
+      assert.strictEqual(parsed[0].parts[1].content, "Keep this text");
       assert.strictEqual(result.attributes!["small_attr"], "keep me");
     });
 
     it("should shrink tool_call arguments with sentinel", () => {
       const largeArgs = { data: "x".repeat(MAX_SPAN_SIZE_BYTES) };
-      const messageWrapper = JSON.stringify({
-        version: "1.0",
-        messages: [
-          {
-            role: "assistant",
-            parts: [
-              { type: "tool_call", name: "search", id: "call_1", arguments: largeArgs },
-              { type: "text", content: "short text" },
-            ],
-          },
-        ],
-      });
+      const messageWrapper = JSON.stringify([
+        {
+          role: "assistant",
+          parts: [
+            { type: "tool_call", name: "search", id: "call_1", arguments: largeArgs },
+            { type: "text", content: "short text" },
+          ],
+        },
+      ]);
       const span = { attributes: { "gen_ai.input.messages": messageWrapper } };
       const result = truncateSpan(span);
       const parsed = JSON.parse(result.attributes!["gen_ai.input.messages"] as string);
-      assert.strictEqual(parsed.messages[0].parts[0].arguments, "[truncated]");
-      assert.strictEqual(parsed.messages[0].parts[0].name, "search");
-      assert.strictEqual(parsed.messages[0].parts[1].content, "short text");
+      assert.strictEqual(parsed[0].parts[0].arguments, "[truncated]");
+      assert.strictEqual(parsed[0].parts[0].name, "search");
+      assert.strictEqual(parsed[0].parts[1].content, "short text");
     });
 
     it("should shrink tool_call_response response with sentinel", () => {
       const largeResponse = { data: "x".repeat(MAX_SPAN_SIZE_BYTES) };
-      const messageWrapper = JSON.stringify({
-        version: "1.0",
-        messages: [
-          {
-            role: "tool",
-            parts: [
-              { type: "tool_call_response", id: "call_1", response: largeResponse },
-              { type: "text", content: "short text" },
-            ],
-          },
-        ],
-      });
+      const messageWrapper = JSON.stringify([
+        {
+          role: "tool",
+          parts: [
+            { type: "tool_call_response", id: "call_1", response: largeResponse },
+            { type: "text", content: "short text" },
+          ],
+        },
+      ]);
       const span = { attributes: { "gen_ai.input.messages": messageWrapper } };
       const result = truncateSpan(span);
       const parsed = JSON.parse(result.attributes!["gen_ai.input.messages"] as string);
-      assert.strictEqual(parsed.messages[0].parts[0].response, "[truncated]");
-      assert.strictEqual(parsed.messages[0].parts[0].id, "call_1");
-      assert.strictEqual(parsed.messages[0].parts[1].content, "short text");
+      assert.strictEqual(parsed[0].parts[0].response, "[truncated]");
+      assert.strictEqual(parsed[0].parts[0].id, "call_1");
+      assert.strictEqual(parsed[0].parts[1].content, "short text");
     });
 
     it("should shrink server_tool_call payload with sentinel", () => {
       const largePayload = { type: "web_search", query: "x".repeat(MAX_SPAN_SIZE_BYTES) };
-      const messageWrapper = JSON.stringify({
-        version: "1.0",
-        messages: [
-          {
-            role: "assistant",
-            parts: [
-              {
-                type: "server_tool_call",
-                name: "web_search",
-                id: "stc_1",
-                server_tool_call: largePayload,
-              },
-              { type: "text", content: "keep me" },
-            ],
-          },
-        ],
-      });
+      const messageWrapper = JSON.stringify([
+        {
+          role: "assistant",
+          parts: [
+            {
+              type: "server_tool_call",
+              name: "web_search",
+              id: "stc_1",
+              server_tool_call: largePayload,
+            },
+            { type: "text", content: "keep me" },
+          ],
+        },
+      ]);
       const span = { attributes: { "gen_ai.input.messages": messageWrapper } };
       const result = truncateSpan(span);
       const parsed = JSON.parse(result.attributes!["gen_ai.input.messages"] as string);
-      assert.strictEqual(parsed.messages[0].parts[0].server_tool_call, "[truncated]");
-      assert.strictEqual(parsed.messages[0].parts[0].name, "web_search");
-      assert.strictEqual(parsed.messages[0].parts[1].content, "keep me");
+      assert.strictEqual(parsed[0].parts[0].server_tool_call, "[truncated]");
+      assert.strictEqual(parsed[0].parts[0].name, "web_search");
+      assert.strictEqual(parsed[0].parts[1].content, "keep me");
     });
 
     it("should shrink server_tool_call_response payload with sentinel", () => {
@@ -1159,51 +2173,46 @@ describe("Exporter utils", () => {
         type: "web_search_result",
         results: "x".repeat(MAX_SPAN_SIZE_BYTES),
       };
-      const messageWrapper = JSON.stringify({
-        version: "1.0",
-        messages: [
-          {
-            role: "tool",
-            parts: [
-              {
-                type: "server_tool_call_response",
-                id: "stc_1",
-                server_tool_call_response: largePayload,
-              },
-              { type: "text", content: "keep me" },
-            ],
-          },
-        ],
-      });
+      const messageWrapper = JSON.stringify([
+        {
+          role: "tool",
+          parts: [
+            {
+              type: "server_tool_call_response",
+              id: "stc_1",
+              server_tool_call_response: largePayload,
+            },
+            { type: "text", content: "keep me" },
+          ],
+        },
+      ]);
       const span = { attributes: { "gen_ai.input.messages": messageWrapper } };
       const result = truncateSpan(span);
       const parsed = JSON.parse(result.attributes!["gen_ai.input.messages"] as string);
-      assert.strictEqual(parsed.messages[0].parts[0].server_tool_call_response, "[truncated]");
-      assert.strictEqual(parsed.messages[0].parts[0].id, "stc_1");
-      assert.strictEqual(parsed.messages[0].parts[1].content, "keep me");
+      assert.strictEqual(parsed[0].parts[0].server_tool_call_response, "[truncated]");
+      assert.strictEqual(parsed[0].parts[0].id, "stc_1");
+      assert.strictEqual(parsed[0].parts[1].content, "keep me");
     });
 
     it("should trim text content in message attributes when oversized", () => {
       const largeText = "y".repeat(MAX_SPAN_SIZE_BYTES);
-      const messageWrapper = JSON.stringify({
-        version: "1.0",
-        messages: [{ role: "user", parts: [{ type: "text", content: largeText }] }],
-      });
+      const messageWrapper = JSON.stringify([
+        { role: "user", parts: [{ type: "text", content: largeText }] },
+      ]);
       const span = { attributes: { "gen_ai.input.messages": messageWrapper } };
       const result = truncateSpan(span);
       const parsed = JSON.parse(result.attributes!["gen_ai.input.messages"] as string);
-      assert.ok(parsed.messages[0].parts[0].content.includes("… [truncated]"));
-      assert.ok(parsed.messages[0].parts[0].content.length < largeText.length);
+      assert.ok(parsed[0].parts[0].content.includes("… [truncated]"));
+      assert.ok(parsed[0].parts[0].content.length < largeText.length);
       const spanSize = Buffer.byteLength(JSON.stringify(result), "utf8");
       assert.ok(spanSize <= MAX_SPAN_SIZE_BYTES);
     });
 
     it("should trim utf8 text content without splitting code points", () => {
       const largeEmojiText = "🙂".repeat(90 * 1024);
-      const messageWrapper = JSON.stringify({
-        version: "1.0",
-        messages: [{ role: "user", parts: [{ type: "text", content: largeEmojiText }] }],
-      });
+      const messageWrapper = JSON.stringify([
+        { role: "user", parts: [{ type: "text", content: largeEmojiText }] },
+      ]);
       const span = {
         traceId: "00000000000000000000000000000001",
         spanId: "0000000000000002",
@@ -1219,7 +2228,7 @@ describe("Exporter utils", () => {
       };
       const result = truncateSpan(span);
       const parsed = JSON.parse(result.attributes!["gen_ai.input.messages"] as string);
-      const trimmedContent = parsed.messages[0].parts[0].content as string;
+      const trimmedContent = parsed[0].parts[0].content as string;
       assert.ok(trimmedContent.includes("… [truncated]"));
       const prefix = trimmedContent.slice(0, -"… [truncated]".length);
       assert.ok(Array.from(prefix).every((cp: string) => cp === "🙂"));
@@ -1261,10 +2270,7 @@ describe("Exporter utils", () => {
         content: "x".repeat(blobSize),
       }));
       const textPart = { type: "text" as const, content: "y".repeat(1024) };
-      const messageWrapper = JSON.stringify({
-        version: "1.0",
-        messages: [{ role: "user", parts: [...blobParts, textPart] }],
-      });
+      const messageWrapper = JSON.stringify([{ role: "user", parts: [...blobParts, textPart] }]);
       const span = {
         traceId: "00000000000000000000000000000001",
         spanId: "0000000000000002",
@@ -1279,7 +2285,7 @@ describe("Exporter utils", () => {
       const resultSize = Buffer.byteLength(JSON.stringify(result), "utf8");
       assert.ok(resultSize <= MAX_SPAN_SIZE_BYTES);
       const parsed = JSON.parse(result.attributes!["gen_ai.input.messages"] as string);
-      const sentinelCount = parsed.messages[0].parts.filter(
+      const sentinelCount = parsed[0].parts.filter(
         (p: Record<string, unknown>) => p.type === "blob" && p.content === "[blob truncated]",
       ).length;
       assert.ok(sentinelCount > 0);
@@ -1293,10 +2299,7 @@ describe("Exporter utils", () => {
         { type: "text", content: "c".repeat(100 * 1024) },
         { type: "reasoning", content: "d".repeat(100 * 1024) },
       ];
-      const messageWrapper = JSON.stringify({
-        version: "1.0",
-        messages: [{ role: "user", parts: regularParts }],
-      });
+      const messageWrapper = JSON.stringify([{ role: "user", parts: regularParts }]);
       const span = {
         traceId: "00000000000000000000000000000001",
         spanId: "0000000000000002",
@@ -1311,7 +2314,7 @@ describe("Exporter utils", () => {
       const resultSize = Buffer.byteLength(JSON.stringify(result), "utf8");
       assert.ok(resultSize <= MAX_SPAN_SIZE_BYTES);
       const parsed = JSON.parse(result.attributes!["gen_ai.input.messages"] as string);
-      const truncatedCount = parsed.messages[0].parts.filter(
+      const truncatedCount = parsed[0].parts.filter(
         (part: Record<string, unknown>) =>
           typeof part.content === "string" && (part.content as string).includes("… [truncated]"),
       ).length;
@@ -1344,10 +2347,9 @@ describe("Exporter utils", () => {
 
     it("should only trim the excess bytes, preserving as much content as possible", () => {
       const textSize = MAX_SPAN_SIZE_BYTES + 5000;
-      const messageWrapper = JSON.stringify({
-        version: "1.0",
-        messages: [{ role: "user", parts: [{ type: "text", content: "x".repeat(textSize) }] }],
-      });
+      const messageWrapper = JSON.stringify([
+        { role: "user", parts: [{ type: "text", content: "x".repeat(textSize) }] },
+      ]);
       const span = {
         traceId: "00000000000000000000000000000001",
         spanId: "0000000000000002",
@@ -1360,7 +2362,7 @@ describe("Exporter utils", () => {
       };
       const result = truncateSpan(span);
       const parsed = JSON.parse(result.attributes!["gen_ai.input.messages"] as string);
-      const trimmedContent = parsed.messages[0].parts[0].content as string;
+      const trimmedContent = parsed[0].parts[0].content as string;
       assert.ok(trimmedContent.includes("… [truncated]"));
       const trimmedLength = Buffer.byteLength(trimmedContent, "utf8");
       assert.ok(trimmedLength > textSize * 0.9);
@@ -1370,18 +2372,15 @@ describe("Exporter utils", () => {
     it("should leave other fields untouched when trimming the largest is sufficient", () => {
       const largeContent = "L".repeat(300 * 1024);
       const mediumContent = "M".repeat(50 * 1024);
-      const messageWrapper = JSON.stringify({
-        version: "1.0",
-        messages: [
-          {
-            role: "user",
-            parts: [
-              { type: "text", content: largeContent },
-              { type: "text", content: mediumContent },
-            ],
-          },
-        ],
-      });
+      const messageWrapper = JSON.stringify([
+        {
+          role: "user",
+          parts: [
+            { type: "text", content: largeContent },
+            { type: "text", content: mediumContent },
+          ],
+        },
+      ]);
       const span = {
         traceId: "00000000000000000000000000000001",
         spanId: "0000000000000002",
@@ -1394,8 +2393,8 @@ describe("Exporter utils", () => {
       };
       const result = truncateSpan(span);
       const parsed = JSON.parse(result.attributes!["gen_ai.input.messages"] as string);
-      assert.ok((parsed.messages[0].parts[0].content as string).includes("… [truncated]"));
-      assert.strictEqual(parsed.messages[0].parts[1].content, mediumContent);
+      assert.ok((parsed[0].parts[0].content as string).includes("… [truncated]"));
+      assert.strictEqual(parsed[0].parts[1].content, mediumContent);
       assert.ok(Buffer.byteLength(JSON.stringify(result), "utf8") <= MAX_SPAN_SIZE_BYTES);
     });
 
@@ -1430,10 +2429,7 @@ describe("Exporter utils", () => {
         mime_type: "image/png",
         content: "x".repeat(blobSize),
       }));
-      const messageWrapper = JSON.stringify({
-        version: "1.0",
-        messages: [{ role: "user", parts: blobParts }],
-      });
+      const messageWrapper = JSON.stringify([{ role: "user", parts: blobParts }]);
       const span = {
         traceId: "00000000000000000000000000000001",
         spanId: "0000000000000002",
@@ -1448,10 +2444,10 @@ describe("Exporter utils", () => {
       const resultSize = Buffer.byteLength(JSON.stringify(result), "utf8");
       assert.ok(resultSize <= MAX_SPAN_SIZE_BYTES);
       const parsed = JSON.parse(result.attributes!["gen_ai.input.messages"] as string);
-      const sentinelCount = parsed.messages[0].parts.filter(
+      const sentinelCount = parsed[0].parts.filter(
         (p: Record<string, unknown>) => p.content === "[blob truncated]",
       ).length;
-      const preservedCount = parsed.messages[0].parts.filter(
+      const preservedCount = parsed[0].parts.filter(
         (p: Record<string, unknown>) => p.content !== "[blob truncated]",
       ).length;
       assert.ok(sentinelCount > 0);
@@ -1460,14 +2456,11 @@ describe("Exporter utils", () => {
 
     it("should use structured overflow sentinel for message attributes in phase 2 fallback", () => {
       const hugeArray = new Array(100000).fill(42);
-      const messageWrapper = JSON.stringify({
-        version: "1.0",
-        messages: [
-          { role: "user", parts: [{ type: "text", content: "hello user" }] },
-          { role: "assistant", parts: [{ type: "text", content: "hello back" }] },
-          { role: "user", parts: [{ type: "text", content: "another msg" }] },
-        ],
-      });
+      const messageWrapper = JSON.stringify([
+        { role: "user", parts: [{ type: "text", content: "hello user" }] },
+        { role: "assistant", parts: [{ type: "text", content: "hello back" }] },
+        { role: "user", parts: [{ type: "text", content: "another msg" }] },
+      ]);
       const span = {
         traceId: "00000000000000000000000000000001",
         spanId: "0000000000000002",
@@ -1484,11 +2477,11 @@ describe("Exporter utils", () => {
       const result = truncateSpan(span);
       const sentinelValue = result.attributes!["gen_ai.input.messages"] as string;
       const parsed = JSON.parse(sentinelValue);
-      assert.strictEqual(parsed.version, "0.1.0");
-      assert.strictEqual(parsed.messages.length, 1);
-      assert.strictEqual(parsed.messages[0].role, "system");
-      assert.strictEqual(parsed.messages[0].parts[0].type, "text");
-      assert.ok(parsed.messages[0].parts[0].content.includes("3 messages exceeded limit"));
+      assert.ok(Array.isArray(parsed));
+      assert.strictEqual(parsed.length, 1);
+      assert.strictEqual(parsed[0].role, "system");
+      assert.strictEqual(parsed[0].parts[0].type, "text");
+      assert.ok(parsed[0].parts[0].content.includes("3 messages exceeded limit"));
     });
 
     it("should truncate oversized raw dict in gen_ai.output.messages", () => {
@@ -1520,16 +2513,13 @@ describe("Exporter utils", () => {
       assert.strictEqual(result.attributes!["gen_ai.output.messages"], smallDict);
     });
 
-    it("should use message-aware shrinking for versioned wrapper in gen_ai.output.messages", () => {
-      const messageWrapper = JSON.stringify({
-        version: "1.0",
-        messages: [
-          {
-            role: "assistant",
-            parts: [{ type: "text", content: "z".repeat(200 * 1024) }],
-          },
-        ],
-      });
+    it("should use message-aware shrinking for array wrapper in gen_ai.output.messages", () => {
+      const messageWrapper = JSON.stringify([
+        {
+          role: "assistant",
+          parts: [{ type: "text", content: "z".repeat(200 * 1024) }],
+        },
+      ]);
       const span = {
         attributes: {
           "gen_ai.output.messages": messageWrapper,
@@ -1540,9 +2530,9 @@ describe("Exporter utils", () => {
       const output = result.attributes!["gen_ai.output.messages"] as string;
       assert.notStrictEqual(output, "[overlimit]");
       const parsed = JSON.parse(output);
-      assert.strictEqual(parsed.version, "1.0");
-      assert.strictEqual(parsed.messages[0].parts[0].type, "text");
-      assert.ok(parsed.messages[0].parts[0].content.length < 200 * 1024);
+      assert.ok(Array.isArray(parsed));
+      assert.strictEqual(parsed[0].parts[0].type, "text");
+      assert.ok(parsed[0].parts[0].content.length < 200 * 1024);
       assert.ok(Buffer.byteLength(JSON.stringify(result), "utf8") <= MAX_SPAN_SIZE_BYTES);
     });
 
@@ -1551,7 +2541,7 @@ describe("Exporter utils", () => {
         role: "user",
         parts: [{ type: "text", content: "y".repeat(10000) }],
       }));
-      const messageWrapper = JSON.stringify({ version: "1.0", messages });
+      const messageWrapper = JSON.stringify(messages);
       const span = { attributes: { "gen_ai.input.messages": messageWrapper } };
       const result = truncateSpan(span);
       const size = Buffer.byteLength(JSON.stringify(result), "utf8");

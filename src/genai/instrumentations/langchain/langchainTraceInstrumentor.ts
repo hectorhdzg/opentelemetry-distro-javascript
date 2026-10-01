@@ -11,20 +11,30 @@ import {
   InstrumentationModuleDefinition,
   isWrapped,
 } from "@opentelemetry/instrumentation";
-import type { LangChainTracer } from "./tracer.js";
+import { LangChainTracer } from "./tracer.js";
 
 type CallbackManagerModuleType = typeof CallbackManagerModule;
-type LangChainTracerCtor = new (tracer: Tracer) => LangChainTracer;
+type LangChainTracerCtor = new (tracer: Tracer, enableSensitiveData?: boolean) => LangChainTracer;
 
 class LangChainTraceInstrumentorImpl extends InstrumentationBase<InstrumentationConfig> {
   private static _instance: LangChainTraceInstrumentorImpl | null = null;
   private _hasBeenEnabled = false;
   private _isPatched = false;
   protected otelTracer: Tracer;
-  /** Lazy-loaded to avoid eagerly importing @langchain/core/tracers/base
-   *  (which transitively loads @langchain/core/callbacks/manager) before
-   *  the instrumentation hooks for that module have been registered. */
-  private _tracerCtor: LangChainTracerCtor | undefined;
+  // Statically bound at module load. A previous lazy `import("./tracer.js")`
+  // resolved on a later microtask, so any `_configureSync` call that landed
+  // in that window (typically the first compiled-graph `invoke` after distro
+  // startup) silently fell through with no tracer attached, dropping the
+  // outer `invoke_agent LangGraph` wrapper span and fragmenting the trace.
+  // A static import is safe: by the time `patch()` runs, the callbacks
+  // manager module is already loaded (it is the `module` argument).
+  private _tracerCtor: LangChainTracerCtor = LangChainTracer;
+  /**
+   * When true, the attached {@link LangChainTracer} captures sensitive message
+   * content on spans regardless of the OTel GenAI content-capture environment
+   * variables.
+   */
+  private _enableSensitiveData = false;
 
   private constructor() {
     if (LangChainTraceInstrumentorImpl._instance !== null) {
@@ -91,22 +101,6 @@ class LangChainTraceInstrumentorImpl extends InstrumentationBase<Instrumentation
       return module;
     }
 
-    // Now that the hooks are registered and @langchain/core/callbacks/manager
-    // is loaded, it is safe to load tracer.js (and its transitive
-    // @langchain/core/tracers/base dependency). The promise resolves in the
-    // next microtask — well before any user code invokes a LangChain
-    // chain/agent/tool (which is what triggers _configureSync).
-    void import("./tracer.js").then(
-      (m) => {
-        this._tracerCtor = m.LangChainTracer;
-      },
-      (err) => {
-        diag.error(
-          `[LangChainTraceInstrumentor] Failed to load LangChainTracer: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      },
-    );
-
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const instrumentor = this;
     this._wrap(CallbackManager, "_configureSync", (original) => {
@@ -114,12 +108,13 @@ class LangChainTraceInstrumentorImpl extends InstrumentationBase<Instrumentation
         this: CallbackManagerModuleType,
         ...args: Parameters<(typeof CallbackManager)["_configureSync"]>
       ) {
-        if (instrumentor._tracerCtor) {
-          args[0] = addTracerToHandlers(instrumentor.otelTracer, args[0], instrumentor._tracerCtor);
-          diag.debug("[LangChainTraceInstrumentor] _configureSync wrapped to add LangChainTracer");
-        } else {
-          diag.debug("[LangChainTraceInstrumentor] LangChainTracer not yet loaded, skipping");
-        }
+        args[0] = addTracerToHandlers(
+          instrumentor.otelTracer,
+          args[0],
+          instrumentor._tracerCtor,
+          instrumentor._enableSensitiveData,
+        );
+        diag.debug("[LangChainTraceInstrumentor] _configureSync wrapped to add LangChainTracer");
         return original.apply(this, args);
       };
     });
@@ -129,7 +124,8 @@ class LangChainTraceInstrumentorImpl extends InstrumentationBase<Instrumentation
     return module;
   }
 
-  manuallyInstrumentImpl(module: CallbackManagerModuleType): void {
+  manuallyInstrumentImpl(module: CallbackManagerModuleType, enableSensitiveData = false): void {
+    this._enableSensitiveData = enableSensitiveData;
     diag.info("[LangChainTraceInstrumentor] Manually instrumenting CallbackManagerModule");
     this.patch(module);
   }
@@ -169,9 +165,19 @@ export class LangChainTraceInstrumentor {
    * Initialize and auto-instrument for LangChain
    * @param module The CallbackManager module to instrument
    * @param options Optional configuration options
+   * @param options.enableSensitiveData When true, sensitive message content
+   *   (prompts, completions, tool arguments/results, system instructions) is
+   *   captured on spans. Defaults to false. Only enable in trusted,
+   *   non-production environments.
    */
-  static instrument(module: CallbackManagerModuleType): void {
-    LangChainTraceInstrumentorImpl.getInstance().manuallyInstrumentImpl(module);
+  static instrument(
+    module: CallbackManagerModuleType,
+    options?: { enableSensitiveData?: boolean },
+  ): void {
+    LangChainTraceInstrumentorImpl.getInstance().manuallyInstrumentImpl(
+      module,
+      options?.enableSensitiveData ?? false,
+    );
   }
 
   /**
@@ -206,20 +212,30 @@ export function addTracerToHandlers(
   tracer: Tracer,
   handlers: CallbackManagerModule.Callbacks | undefined,
   tracerCtor: LangChainTracerCtor,
+  enableSensitiveData = false,
 ): CallbackManagerModule.Callbacks {
   if (handlers == null) {
-    return [new tracerCtor(tracer)];
+    return [new tracerCtor(tracer, enableSensitiveData)];
   }
 
   if (Array.isArray(handlers)) {
-    if (!handlers.some((h) => h instanceof tracerCtor)) {
-      handlers.push(new tracerCtor(tracer));
+    const existing = handlers.find((h) => h instanceof tracerCtor) as LangChainTracer | undefined;
+    if (existing) {
+      // Reconcile an already-attached tracer with the latest config so the flag
+      // never goes stale across re-instrumentation.
+      existing.setEnableSensitiveData(enableSensitiveData);
+    } else {
+      handlers.push(new tracerCtor(tracer, enableSensitiveData));
     }
     return handlers;
   }
 
-  if (!handlers.inheritableHandlers.some((h) => h instanceof tracerCtor)) {
-    handlers.addHandler(new tracerCtor(tracer), true);
+  const existing = handlers.inheritableHandlers.find((h) => h instanceof tracerCtor) as
+    LangChainTracer | undefined;
+  if (existing) {
+    existing.setEnableSensitiveData(enableSensitiveData);
+  } else {
+    handlers.addHandler(new tracerCtor(tracer, enableSensitiveData), true);
   }
   return handlers;
 }

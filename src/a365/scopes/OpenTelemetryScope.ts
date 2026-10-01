@@ -7,7 +7,7 @@
  * Adapted from microsoft/Agent365-nodejs agents-a365-observability/src/tracing/scopes/OpenTelemetryScope.ts
  */
 
-import type { Span, SpanContext, AttributeValue, TimeInput } from "@opentelemetry/api";
+import type { Span, SpanContext, AttributeValue, TimeInput, Attributes } from "@opentelemetry/api";
 import { trace, SpanKind, SpanStatusCode, context } from "@opentelemetry/api";
 import { OpenTelemetryConstants } from "../constants.js";
 import type {
@@ -34,7 +34,7 @@ export abstract class OpenTelemetryScope {
   /**
    * Returns a tracer from the current global TracerProvider.
    *
-   * This **must not** be stored in a static field because the distro's
+   * This **must not** be stored in a static field because
    * `useMicrosoftOpenTelemetry()` resets the global API state
    * (`trace.disable()` + global-object deletion) before starting the
    * NodeSDK. A static field would capture a `ProxyTracer` bound to the
@@ -121,6 +121,7 @@ export abstract class OpenTelemetryScope {
         agentDetails.agentBlueprintId,
       );
       this.setTagMaybe(OpenTelemetryConstants.GEN_AI_AGENT_VERSION_KEY, agentDetails.agentVersion);
+      this.setTagMaybe(OpenTelemetryConstants.GEN_AI_PROVIDER_NAME_KEY, agentDetails.providerName);
     }
 
     // Set tenant ID
@@ -167,10 +168,7 @@ export abstract class OpenTelemetryScope {
   /** Records multiple attribute key/value pairs. */
   public recordAttributes(
     attributes:
-      | Iterable<[string, AttributeValue]>
-      | Record<string, AttributeValue>
-      | null
-      | undefined,
+      Iterable<[string, AttributeValue]> | Record<string, AttributeValue> | null | undefined,
   ): void {
     if (!attributes) return;
 
@@ -211,6 +209,15 @@ export abstract class OpenTelemetryScope {
         [name]: value as string | number | boolean | string[] | number[],
       });
     }
+  }
+
+  /**
+   * Adds an event to the current span.
+   * @param name The event name
+   * @param attributes Optional event attributes
+   */
+  protected addEvent(name: string, attributes?: Attributes): void {
+    this.span.addEvent(name, attributes);
   }
 
   /**

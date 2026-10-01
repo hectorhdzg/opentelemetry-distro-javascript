@@ -15,6 +15,7 @@
 export const GEN_AI_OPERATION_INVOKE_AGENT = "invoke_agent" as const;
 export const GEN_AI_OPERATION_EXECUTE_TOOL = "execute_tool" as const;
 export const GEN_AI_OPERATION_OUTPUT_MESSAGES = "output_messages" as const;
+export const GEN_AI_OPERATION_APPLY_GUARDRAIL = "apply_guardrail" as const;
 export const GEN_AI_OPERATION_CHAT = "chat" as const;
 
 // --- Attributes (ATTR_ prefix, following OTel convention) ---
@@ -25,9 +26,21 @@ export const ATTR_ERROR_MESSAGE = "error.message" as const;
 
 // GenAI core
 export const ATTR_GEN_AI_OPERATION_NAME = "gen_ai.operation.name" as const;
+export const ATTR_GEN_AI_OUTPUT_TYPE = "gen_ai.output.type" as const;
 export const ATTR_GEN_AI_REQUEST_MODEL = "gen_ai.request.model" as const;
+export const ATTR_GEN_AI_REQUEST_CHOICE_COUNT = "gen_ai.request.choice.count" as const;
+export const ATTR_GEN_AI_REQUEST_FREQUENCY_PENALTY = "gen_ai.request.frequency_penalty" as const;
+export const ATTR_GEN_AI_REQUEST_MAX_TOKENS = "gen_ai.request.max_tokens" as const;
+export const ATTR_GEN_AI_REQUEST_PRESENCE_PENALTY = "gen_ai.request.presence_penalty" as const;
+export const ATTR_GEN_AI_REQUEST_SEED = "gen_ai.request.seed" as const;
+export const ATTR_GEN_AI_REQUEST_STOP_SEQUENCES = "gen_ai.request.stop_sequences" as const;
+export const ATTR_GEN_AI_REQUEST_STREAM = "gen_ai.request.stream" as const;
+export const ATTR_GEN_AI_REQUEST_TEMPERATURE = "gen_ai.request.temperature" as const;
+export const ATTR_GEN_AI_REQUEST_TOP_K = "gen_ai.request.top_k" as const;
+export const ATTR_GEN_AI_REQUEST_TOP_P = "gen_ai.request.top_p" as const;
 export const ATTR_GEN_AI_RESPONSE_MODEL = "gen_ai.response.model" as const;
 export const ATTR_GEN_AI_RESPONSE_ID = "gen_ai.response.id" as const;
+export const ATTR_GEN_AI_RESPONSE_FINISH_REASONS = "gen_ai.response.finish_reasons" as const;
 export const ATTR_GEN_AI_PROVIDER_NAME = "gen_ai.provider.name" as const;
 export const ATTR_GEN_AI_SYSTEM_INSTRUCTIONS = "gen_ai.system_instructions" as const;
 export const ATTR_GEN_AI_INPUT_MESSAGES = "gen_ai.input.messages" as const;

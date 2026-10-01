@@ -2,23 +2,16 @@
 // Licensed under the MIT License.
 
 /**
- * Azure Monitor–specific initialization that runs alongside the distro.
- * Statsbeat, Browser SDK Loader, and Live Metrics SDK prefix are
- * Azure Monitor concerns — not part of the generic OTel distro lifecycle.
+ * Azure Monitor–specific initialization that runs alongside the main setup.
+ * SDK Stats, Browser SDK Loader, and Live Metrics SDK prefix are
+ * Azure Monitor concerns — not part of the generic OTel lifecycle.
  */
 
 import type { InternalConfig } from "../shared/config.js";
-import type { StatsbeatFeatures } from "../types.js";
+import type { SdkStatsFeatures } from "../types.js";
 import { BrowserSdkLoader } from "./browserSdkLoader/browserSdkLoader.js";
 import { setSdkPrefix } from "./metrics/quickpulse/utils.js";
 import { Logger } from "../shared/logging/index.js";
-import { SEMRESATTRS_K8S_CLUSTER_NAME } from "@opentelemetry/semantic-conventions";
-
-/**
- * Semantic attribute for cloud resource ID, defined by \@opentelemetry/resource-detector-azure
- * @internal
- */
-const CLOUD_RESOURCE_ID_ATTRIBUTE = "cloud.resource_id";
 
 /**
  * Check whether Azure Monitor has a usable connection string available
@@ -53,21 +46,20 @@ export function validateAzureMonitorConfig(config: InternalConfig): boolean {
 }
 
 /**
- * Compute Azure Monitor–specific statsbeat features from the config.
+ * Compute Azure Monitor–specific SDK Stats features from the config.
  * Does not write to the env var — the caller consolidates all features.
  *
  * @internal
  */
-export function getAzureMonitorStatsbeatFeatures(config: InternalConfig): StatsbeatFeatures {
-  const resourceAttributes = config.resource.attributes;
-  const aksResourceDetected =
-    SEMRESATTRS_K8S_CLUSTER_NAME in resourceAttributes ||
-    CLOUD_RESOURCE_ID_ATTRIBUTE in resourceAttributes;
+export function getAzureMonitorSdkStatsFeatures(config: InternalConfig): SdkStatsFeatures {
   return {
     browserSdkLoader: config.browserSdkLoaderOptions.enabled,
     aadHandling: !!config.azureMonitorExporterOptions?.credential,
     diskRetry: !config.azureMonitorExporterOptions?.disableOfflineStorage,
-    aksResourceDetectorPopulation: aksResourceDetected,
+    // Only report this when the AKS resource detector itself populated the AKS cluster
+    // attributes, which requires the customer to have configured access to the
+    // aks-cluster-metadata ConfigMap (RBAC + env var or mounted ConfigMap).
+    aksResourceDetectorPopulation: config.aksResourceDetectorPopulated,
   };
 }
 

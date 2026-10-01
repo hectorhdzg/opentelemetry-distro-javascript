@@ -12,8 +12,11 @@ import {
   setInputMessagesAttribute,
   setOutputMessagesAttribute,
   setModelAttribute,
+  setChoiceCountAttribute,
+  setRequestAttributes,
   setProviderNameAttribute,
   setResponseIdAttribute,
+  setFinishReasonsAttribute,
   setSessionIdAttribute,
   setSystemInstructionsAttribute,
   setTokenAttributes,
@@ -23,10 +26,22 @@ import {
   ATTR_GEN_AI_AGENT_NAME,
   ATTR_GEN_AI_INPUT_MESSAGES,
   ATTR_GEN_AI_OPERATION_NAME,
+  ATTR_GEN_AI_OUTPUT_TYPE,
   ATTR_GEN_AI_OUTPUT_MESSAGES,
   ATTR_GEN_AI_PROVIDER_NAME,
+  ATTR_GEN_AI_REQUEST_CHOICE_COUNT,
+  ATTR_GEN_AI_REQUEST_FREQUENCY_PENALTY,
+  ATTR_GEN_AI_REQUEST_MAX_TOKENS,
   ATTR_GEN_AI_REQUEST_MODEL,
+  ATTR_GEN_AI_REQUEST_PRESENCE_PENALTY,
+  ATTR_GEN_AI_REQUEST_SEED,
+  ATTR_GEN_AI_REQUEST_STOP_SEQUENCES,
+  ATTR_GEN_AI_REQUEST_STREAM,
+  ATTR_GEN_AI_REQUEST_TEMPERATURE,
+  ATTR_GEN_AI_REQUEST_TOP_K,
+  ATTR_GEN_AI_REQUEST_TOP_P,
   ATTR_GEN_AI_RESPONSE_ID,
+  ATTR_GEN_AI_RESPONSE_FINISH_REASONS,
   ATTR_GEN_AI_RESPONSE_MODEL,
   ATTR_GEN_AI_SYSTEM_INSTRUCTIONS,
   ATTR_GEN_AI_TOOL_CALL_ARGUMENTS,
@@ -169,7 +184,7 @@ describe("setAgentAttributes", () => {
 });
 
 describe("setToolAttributes", () => {
-  it("sets tool attributes for tool runs", () => {
+  it("sets tool content attributes for tool runs when content capture is enabled", () => {
     const span = makeSpan();
     const run = makeRun({
       run_type: "tool",
@@ -183,7 +198,7 @@ describe("setToolAttributes", () => {
         },
       },
     });
-    setToolAttributes(run, span);
+    setToolAttributes(run, span, true);
     const calls = (span.setAttribute as ReturnType<typeof vi.fn>).mock.calls;
     assert.ok(
       calls.some((c: unknown[]) => c[0] === ATTR_GEN_AI_TOOL_NAME && c[1] === "search_web"),
@@ -194,10 +209,43 @@ describe("setToolAttributes", () => {
     assert.ok(calls.some((c: unknown[]) => c[0] === ATTR_GEN_AI_TOOL_CALL_ID && c[1] === "tc-123"));
   });
 
+  it("omits tool arguments/results but keeps name/type/id when content capture is disabled", () => {
+    const span = makeSpan();
+    const run = makeRun({
+      run_type: "tool",
+      name: "search_web",
+      serialized: { name: "search_web" },
+      inputs: { input: "query text" },
+      outputs: {
+        output: {
+          kwargs: { content: "result content" },
+          tool_call_id: "tc-123",
+        },
+      },
+    });
+    // captureContent defaults to false
+    setToolAttributes(run, span);
+    const calls = (span.setAttribute as ReturnType<typeof vi.fn>).mock.calls;
+    assert.ok(
+      calls.some((c: unknown[]) => c[0] === ATTR_GEN_AI_TOOL_NAME && c[1] === "search_web"),
+      "tool name should always be recorded",
+    );
+    assert.ok(calls.some((c: unknown[]) => c[0] === ATTR_GEN_AI_TOOL_TYPE && c[1] === "extension"));
+    assert.ok(calls.some((c: unknown[]) => c[0] === ATTR_GEN_AI_TOOL_CALL_ID && c[1] === "tc-123"));
+    assert.ok(
+      !calls.some((c: unknown[]) => c[0] === ATTR_GEN_AI_TOOL_CALL_ARGUMENTS),
+      "tool arguments (sensitive content) should be omitted",
+    );
+    assert.ok(
+      !calls.some((c: unknown[]) => c[0] === ATTR_GEN_AI_TOOL_CALL_RESULT),
+      "tool result (sensitive content) should be omitted",
+    );
+  });
+
   it("does nothing for non-tool runs", () => {
     const span = makeSpan();
     const run = makeRun({ run_type: "llm" });
-    setToolAttributes(run, span);
+    setToolAttributes(run, span, true);
     assert.strictEqual((span.setAttribute as ReturnType<typeof vi.fn>).mock.calls.length, 0);
   });
 
@@ -207,7 +255,7 @@ describe("setToolAttributes", () => {
       run_type: "tool",
       serialized: undefined as unknown as Record<string, unknown>,
     });
-    setToolAttributes(run, span);
+    setToolAttributes(run, span, true);
     assert.strictEqual((span.setAttribute as ReturnType<typeof vi.fn>).mock.calls.length, 0);
   });
 });
@@ -544,6 +592,401 @@ describe("setModelAttribute", () => {
       ),
     );
   });
+
+  // Responses API (useResponsesApi: true) — LangChain's openai provider
+  // populates response_metadata.model (canonical) and, for backwards compat
+  // with chat completion calls, also response_metadata.model_name. We must
+  // honor both shapes so non-OpenAI RAPI providers (e.g. @langchain/perplexity)
+  // and any future major where the model_name alias is dropped keep working.
+  it("RAPI v1: extracts response model from response_metadata.model when only `model` is set", () => {
+    const span = makeSpan();
+    const run = makeRun({
+      serialized: {
+        id: ["langchain", "chat_models", "openai", "ChatOpenAI"],
+      },
+      extra: { invocation_params: { model: "deployment-o4-mini" } },
+      outputs: {
+        generations: [
+          [
+            {
+              message: {
+                response_metadata: {
+                  model: "o4-mini-2025-04-16",
+                  model_provider: "openai",
+                  id: "resp_abc",
+                },
+              },
+            },
+          ],
+        ],
+      },
+    });
+    setModelAttribute(run, span);
+    const calls = (span.setAttribute as ReturnType<typeof vi.fn>).mock.calls;
+    assert.ok(
+      calls.some(
+        (c: unknown[]) => c[0] === ATTR_GEN_AI_REQUEST_MODEL && c[1] === "deployment-o4-mini",
+      ),
+      "request model should come from invocation_params.model for non-Azure RAPI clients",
+    );
+    assert.ok(
+      calls.some(
+        (c: unknown[]) => c[0] === ATTR_GEN_AI_RESPONSE_MODEL && c[1] === "o4-mini-2025-04-16",
+      ),
+      "response model should be sourced from response_metadata.model (RAPI canonical field)",
+    );
+  });
+
+  it("RAPI v1: prefers response_metadata.model over response_metadata.model_name when both are present", () => {
+    const span = makeSpan();
+    const run = makeRun({
+      serialized: {
+        id: ["langchain", "chat_models", "openai", "ChatOpenAI"],
+      },
+      extra: { invocation_params: { model: "deployment-o4-mini" } },
+      outputs: {
+        generations: [
+          [
+            {
+              message: {
+                response_metadata: {
+                  model: "o4-mini-2025-04-16",
+                  // LangChain duplicates `model` into `model_name` "for
+                  // backwards compat with chat completion calls". We pin a
+                  // distinct sentinel here so the assertion proves we read
+                  // the canonical `model` field first rather than coupling
+                  // to the `model_name` alias.
+                  model_name: "model_name-alias-should-be-ignored",
+                  model_provider: "openai",
+                },
+              },
+            },
+          ],
+        ],
+      },
+    });
+    setModelAttribute(run, span);
+    const calls = (span.setAttribute as ReturnType<typeof vi.fn>).mock.calls;
+    assert.ok(
+      calls.some(
+        (c: unknown[]) => c[0] === ATTR_GEN_AI_RESPONSE_MODEL && c[1] === "o4-mini-2025-04-16",
+      ),
+      "response model should come from response_metadata.model (canonical)",
+    );
+    assert.ok(
+      !calls.some(
+        (c: unknown[]) =>
+          c[0] === ATTR_GEN_AI_RESPONSE_MODEL && c[1] === "model_name-alias-should-be-ignored",
+      ),
+      "response model must not fall back to the model_name alias when model is set",
+    );
+  });
+
+  it("RAPI v0: extracts response model from kwargs.response_metadata.model", () => {
+    const span = makeSpan();
+    const run = makeRun({
+      serialized: {
+        id: ["langchain", "chat_models", "openai", "ChatOpenAI"],
+      },
+      extra: { invocation_params: { model: "deployment-o4-mini" } },
+      outputs: {
+        generations: [
+          [
+            {
+              message: {
+                kwargs: {
+                  response_metadata: {
+                    model: "o4-mini-2025-04-16",
+                    model_provider: "openai",
+                  },
+                },
+              },
+            },
+          ],
+        ],
+      },
+    });
+    setModelAttribute(run, span);
+    const calls = (span.setAttribute as ReturnType<typeof vi.fn>).mock.calls;
+    assert.ok(
+      calls.some(
+        (c: unknown[]) => c[0] === ATTR_GEN_AI_REQUEST_MODEL && c[1] === "deployment-o4-mini",
+      ),
+    );
+    assert.ok(
+      calls.some(
+        (c: unknown[]) => c[0] === ATTR_GEN_AI_RESPONSE_MODEL && c[1] === "o4-mini-2025-04-16",
+      ),
+    );
+  });
+
+  it("AzureChatOpenAI + RAPI: response_metadata.model still drives the workaround request model", () => {
+    // Combines the AzureChatOpenAI ls_model_name=gpt-3.5-turbo regression (see
+    // langchain-ai/langchainjs#10874) with the RAPI response shape. The
+    // response-side model must populate gen_ai.request.model (via the Azure
+    // workaround) AND gen_ai.response.model, even when LangChain only sets
+    // `model` (no `model_name` alias).
+    const span = makeSpan();
+    const run = makeRun({
+      serialized: {
+        id: ["langchain", "chat_models", "azure_openai", "AzureChatOpenAI"],
+      },
+      extra: { metadata: { ls_model_name: "gpt-3.5-turbo" } },
+      outputs: {
+        generations: [
+          [
+            {
+              message: {
+                response_metadata: {
+                  model: "gpt-4o-mini-2024-07-18",
+                  model_provider: "openai",
+                },
+              },
+            },
+          ],
+        ],
+      },
+    });
+    setModelAttribute(run, span);
+    const calls = (span.setAttribute as ReturnType<typeof vi.fn>).mock.calls;
+    assert.ok(
+      calls.some(
+        (c: unknown[]) => c[0] === ATTR_GEN_AI_REQUEST_MODEL && c[1] === "gpt-4o-mini-2024-07-18",
+      ),
+      "AzureChatOpenAI request model should use response_metadata.model when model_name is absent",
+    );
+    assert.ok(
+      calls.some(
+        (c: unknown[]) => c[0] === ATTR_GEN_AI_RESPONSE_MODEL && c[1] === "gpt-4o-mini-2024-07-18",
+      ),
+    );
+  });
+});
+
+describe("setChoiceCountAttribute", () => {
+  it("sets gen_ai.request.choice.count from invocation_params.n when > 1", () => {
+    const span = makeSpan();
+    const run = makeRun({ extra: { invocation_params: { n: 3 } } });
+    setChoiceCountAttribute(run, span);
+    const calls = (span.setAttribute as ReturnType<typeof vi.fn>).mock.calls;
+    assert.ok(
+      calls.some((c: unknown[]) => c[0] === ATTR_GEN_AI_REQUEST_CHOICE_COUNT && c[1] === 3),
+    );
+  });
+
+  it("parses numeric strings", () => {
+    const span = makeSpan();
+    const run = makeRun({ extra: { invocation_params: { n: "5" } } });
+    setChoiceCountAttribute(run, span);
+    const calls = (span.setAttribute as ReturnType<typeof vi.fn>).mock.calls;
+    assert.ok(
+      calls.some((c: unknown[]) => c[0] === ATTR_GEN_AI_REQUEST_CHOICE_COUNT && c[1] === 5),
+    );
+  });
+
+  it("does not emit when n === 1 (semconv: conditionally required only when != 1)", () => {
+    const span = makeSpan();
+    const run = makeRun({ extra: { invocation_params: { n: 1 } } });
+    setChoiceCountAttribute(run, span);
+    assert.strictEqual((span.setAttribute as ReturnType<typeof vi.fn>).mock.calls.length, 0);
+  });
+
+  it("does not emit when n is missing", () => {
+    const span = makeSpan();
+    const run = makeRun({ extra: { invocation_params: { model: "gpt-4o" } } });
+    setChoiceCountAttribute(run, span);
+    assert.strictEqual((span.setAttribute as ReturnType<typeof vi.fn>).mock.calls.length, 0);
+  });
+
+  it("ignores non-positive / non-integer / non-numeric values", () => {
+    for (const n of [0, -1, 1.5, "abc", null, true, [], {}]) {
+      const span = makeSpan();
+      const run = makeRun({ extra: { invocation_params: { n } as Record<string, unknown> } });
+      setChoiceCountAttribute(run, span);
+      assert.strictEqual(
+        (span.setAttribute as ReturnType<typeof vi.fn>).mock.calls.length,
+        0,
+        `should ignore invalid n=${JSON.stringify(n)}`,
+      );
+    }
+  });
+});
+
+describe("setRequestAttributes", () => {
+  it("sets GenAI request parameters from OpenAI-style invocation params", () => {
+    const span = makeSpan();
+    const run = makeRun({
+      extra: {
+        invocation_params: {
+          temperature: 0.2,
+          top_p: 0.8,
+          top_k: 40,
+          max_completion_tokens: 512,
+          frequency_penalty: 0.1,
+          presence_penalty: -0.2,
+          seed: 42,
+          stop: ["DONE", "STOP"],
+          stream: true,
+          response_format: { type: "json_schema" },
+        },
+      },
+    });
+
+    setRequestAttributes(run, span);
+
+    assert.deepStrictEqual(span.attrs, {
+      [ATTR_GEN_AI_OUTPUT_TYPE]: "json",
+      [ATTR_GEN_AI_REQUEST_FREQUENCY_PENALTY]: 0.1,
+      [ATTR_GEN_AI_REQUEST_MAX_TOKENS]: 512,
+      [ATTR_GEN_AI_REQUEST_PRESENCE_PENALTY]: -0.2,
+      [ATTR_GEN_AI_REQUEST_TEMPERATURE]: 0.2,
+      [ATTR_GEN_AI_REQUEST_TOP_K]: 40,
+      [ATTR_GEN_AI_REQUEST_TOP_P]: 0.8,
+      [ATTR_GEN_AI_REQUEST_SEED]: 42,
+      [ATTR_GEN_AI_REQUEST_STOP_SEQUENCES]: ["DONE", "STOP"],
+      [ATTR_GEN_AI_REQUEST_STREAM]: true,
+    });
+  });
+
+  it("supports typed camelCase provider aliases and normalizes a single stop sequence", () => {
+    const span = makeSpan();
+    const run = makeRun({
+      extra: {
+        invocation_params: {
+          maxOutputTokens: 256,
+          frequencyPenalty: 0.25,
+          presencePenalty: 0,
+          topP: 0.9,
+          topK: 10,
+          stopSequences: "END",
+          streaming: false,
+          responseFormat: "text",
+        },
+      },
+    });
+
+    setRequestAttributes(run, span);
+
+    assert.strictEqual(span.attrs[ATTR_GEN_AI_OUTPUT_TYPE], "text");
+    assert.strictEqual(span.attrs[ATTR_GEN_AI_REQUEST_MAX_TOKENS], 256);
+    assert.strictEqual(span.attrs[ATTR_GEN_AI_REQUEST_FREQUENCY_PENALTY], 0.25);
+    assert.strictEqual(span.attrs[ATTR_GEN_AI_REQUEST_PRESENCE_PENALTY], 0);
+    assert.strictEqual(span.attrs[ATTR_GEN_AI_REQUEST_TOP_P], 0.9);
+    assert.strictEqual(span.attrs[ATTR_GEN_AI_REQUEST_TOP_K], 10);
+    assert.deepStrictEqual(span.attrs[ATTR_GEN_AI_REQUEST_STOP_SEQUENCES], ["END"]);
+    assert.strictEqual(span.attrs[ATTR_GEN_AI_REQUEST_STREAM], false);
+  });
+
+  it("preserves whitespace stop sequences", () => {
+    for (const stop of ["\n", ["STOP", "\n\n"]]) {
+      const span = makeSpan();
+      const run = makeRun({ extra: { invocation_params: { stop } } });
+
+      setRequestAttributes(run, span);
+
+      assert.deepStrictEqual(
+        span.attrs[ATTR_GEN_AI_REQUEST_STOP_SEQUENCES],
+        Array.isArray(stop) ? stop : [stop],
+      );
+    }
+  });
+
+  it("rejects empty stop sequences", () => {
+    for (const stop of ["", ["DONE", ""]]) {
+      const span = makeSpan();
+      const run = makeRun({ extra: { invocation_params: { stop } } });
+
+      setRequestAttributes(run, span);
+
+      assert.deepStrictEqual(span.attrs, {});
+    }
+  });
+
+  it("ignores invocation params that are not objects", () => {
+    for (const invocation_params of [null, "invalid", 1, true, []]) {
+      const span = makeSpan();
+      const run = makeRun({ extra: { invocation_params } });
+
+      setRequestAttributes(run, span);
+
+      assert.deepStrictEqual(span.attrs, {});
+    }
+  });
+
+  it("reads Responses API output type from text.format", () => {
+    const span = makeSpan();
+    const run = makeRun({
+      extra: {
+        invocation_params: {
+          text: { format: { type: "json_schema" } },
+        },
+      },
+    });
+
+    setRequestAttributes(run, span);
+
+    assert.strictEqual(span.attrs[ATTR_GEN_AI_OUTPUT_TYPE], "json");
+  });
+
+  it("normalizes canonical and provider-specific output types", () => {
+    const outputTypes = [
+      ["text", "text"],
+      ["json", "json"],
+      ["image", "image"],
+      ["json_object", "json"],
+      ["json_schema", "json"],
+      ["b64_json", "image"],
+      ["url", "image"],
+    ];
+
+    for (const [outputType, expected] of outputTypes) {
+      const span = makeSpan();
+      const run = makeRun({
+        extra: { invocation_params: { output_type: outputType } },
+      });
+
+      setRequestAttributes(run, span);
+
+      assert.strictEqual(span.attrs[ATTR_GEN_AI_OUTPUT_TYPE], expected);
+    }
+  });
+
+  it("ignores output types not documented by the semantic conventions", () => {
+    for (const outputType of ["speech", "audio"]) {
+      const span = makeSpan();
+      const run = makeRun({
+        extra: { invocation_params: { output_type: outputType } },
+      });
+
+      setRequestAttributes(run, span);
+
+      assert.strictEqual(span.attrs[ATTR_GEN_AI_OUTPUT_TYPE], undefined);
+    }
+  });
+
+  it("ignores absent or invalid request parameters", () => {
+    const span = makeSpan();
+    const run = makeRun({
+      extra: {
+        invocation_params: {
+          temperature: Number.NaN,
+          top_p: "not-a-number",
+          top_k: 1.5,
+          max_tokens: 1.5,
+          maxOutputTokens: "256",
+          frequencyPenalty: "0.25",
+          seed: {},
+          stop: ["valid", 1],
+          stream: "false",
+          response_format: { type: "unsupported" },
+        },
+      },
+    });
+
+    setRequestAttributes(run, span);
+
+    assert.deepStrictEqual(span.attrs, {});
+  });
 });
 
 describe("setResponseIdAttribute", () => {
@@ -672,6 +1115,306 @@ describe("setResponseIdAttribute", () => {
     const run = makeRun();
     setResponseIdAttribute(run, span);
     assert.strictEqual((span.setAttribute as ReturnType<typeof vi.fn>).mock.calls.length, 0);
+  });
+});
+
+describe("setFinishReasonsAttribute", () => {
+  it("extracts finish reason from generationInfo (Chat Completions API)", () => {
+    const span = makeSpan();
+    const run = makeRun({
+      outputs: { generations: [[{ generationInfo: { finish_reason: "stop" } }]] },
+    });
+    setFinishReasonsAttribute(run, span);
+    assert.deepStrictEqual(span.attrs[ATTR_GEN_AI_RESPONSE_FINISH_REASONS], ["stop"]);
+  });
+
+  it("extracts finish reason from response_metadata (v1, top-level)", () => {
+    const span = makeSpan();
+    const run = makeRun({
+      outputs: {
+        generations: [[{ message: { response_metadata: { finish_reason: "length" } } }]],
+      },
+    });
+    setFinishReasonsAttribute(run, span);
+    assert.deepStrictEqual(span.attrs[ATTR_GEN_AI_RESPONSE_FINISH_REASONS], ["length"]);
+  });
+
+  it("normalizes provider finish_reason 'tool_calls' to the contract value 'tool_call' (v0)", () => {
+    const span = makeSpan();
+    const run = makeRun({
+      outputs: {
+        generations: [
+          [{ message: { kwargs: { response_metadata: { finish_reason: "tool_calls" } } } }],
+        ],
+      },
+    });
+    setFinishReasonsAttribute(run, span);
+    assert.deepStrictEqual(span.attrs[ATTR_GEN_AI_RESPONSE_FINISH_REASONS], ["tool_call"]);
+  });
+
+  it("prefers generationInfo.finish_reason over response_metadata when both are present", () => {
+    const span = makeSpan();
+    const run = makeRun({
+      outputs: {
+        generations: [
+          [
+            {
+              generationInfo: { finish_reason: "stop" },
+              message: { response_metadata: { finish_reason: "length" } },
+            },
+          ],
+        ],
+      },
+    });
+    setFinishReasonsAttribute(run, span);
+    assert.deepStrictEqual(span.attrs[ATTR_GEN_AI_RESPONSE_FINISH_REASONS], ["stop"]);
+  });
+
+  it("collects one reason per generation when n > 1", () => {
+    const span = makeSpan();
+    const run = makeRun({
+      outputs: {
+        generations: [
+          [{ generationInfo: { finish_reason: "stop" } }],
+          [{ generationInfo: { finish_reason: "length" } }],
+        ],
+      },
+    });
+    setFinishReasonsAttribute(run, span);
+    assert.deepStrictEqual(span.attrs[ATTR_GEN_AI_RESPONSE_FINISH_REASONS], ["stop", "length"]);
+  });
+
+  it("ignores non-string finish reason values", () => {
+    const span = makeSpan();
+    const run = makeRun({
+      outputs: { generations: [[{ generationInfo: { finish_reason: 42 } }]] },
+    });
+    setFinishReasonsAttribute(run, span);
+    assert.strictEqual((span.setAttribute as ReturnType<typeof vi.fn>).mock.calls.length, 0);
+  });
+
+  it("falls back to response_metadata.finish_reason when generationInfo.finish_reason is blank", () => {
+    const span = makeSpan();
+    const run = makeRun({
+      outputs: {
+        generations: [
+          [
+            {
+              generationInfo: { finish_reason: "" },
+              message: { response_metadata: { finish_reason: "length" } },
+            },
+          ],
+        ],
+      },
+    });
+    setFinishReasonsAttribute(run, span);
+    assert.deepStrictEqual(span.attrs[ATTR_GEN_AI_RESPONSE_FINISH_REASONS], ["length"]);
+  });
+
+  it("falls back to response_metadata.finish_reason when generationInfo.finish_reason is non-string", () => {
+    const span = makeSpan();
+    const run = makeRun({
+      outputs: {
+        generations: [
+          [
+            {
+              generationInfo: { finish_reason: 42 },
+              message: { response_metadata: { finish_reason: "stop" } },
+            },
+          ],
+        ],
+      },
+    });
+    setFinishReasonsAttribute(run, span);
+    assert.deepStrictEqual(span.attrs[ATTR_GEN_AI_RESPONSE_FINISH_REASONS], ["stop"]);
+  });
+
+  it("omits the attribute when any generation lacks a valid finish reason (avoids positional misalignment)", () => {
+    const span = makeSpan();
+    const run = makeRun({
+      outputs: {
+        generations: [[{ generationInfo: {} }], [{ generationInfo: { finish_reason: "length" } }]],
+      },
+    });
+    setFinishReasonsAttribute(run, span);
+    assert.strictEqual((span.setAttribute as ReturnType<typeof vi.fn>).mock.calls.length, 0);
+  });
+
+  it("does nothing when no finish reason is found", () => {
+    const span = makeSpan();
+    const run = makeRun();
+    setFinishReasonsAttribute(run, span);
+    assert.strictEqual((span.setAttribute as ReturnType<typeof vi.fn>).mock.calls.length, 0);
+  });
+
+  it("derives 'stop' from Responses API status 'completed' (no native finish_reason)", () => {
+    const span = makeSpan();
+    const run = makeRun({
+      outputs: {
+        generations: [[{ message: { response_metadata: { status: "completed" } } }]],
+      },
+    });
+    setFinishReasonsAttribute(run, span);
+    assert.deepStrictEqual(span.attrs[ATTR_GEN_AI_RESPONSE_FINISH_REASONS], ["stop"]);
+  });
+
+  it("derives 'tool_call' from Responses API status 'completed' when the message has tool calls", () => {
+    const span = makeSpan();
+    const run = makeRun({
+      outputs: {
+        generations: [
+          [
+            {
+              message: {
+                response_metadata: { status: "completed" },
+                tool_calls: [{ id: "call_1", name: "get_weather", args: {} }],
+              },
+            },
+          ],
+        ],
+      },
+    });
+    setFinishReasonsAttribute(run, span);
+    assert.deepStrictEqual(span.attrs[ATTR_GEN_AI_RESPONSE_FINISH_REASONS], ["tool_call"]);
+  });
+
+  it("derives 'tool_call' from Responses API status 'completed' when the message has invalid tool calls", () => {
+    const span = makeSpan();
+    const run = makeRun({
+      outputs: {
+        generations: [
+          [
+            {
+              message: {
+                response_metadata: { status: "completed" },
+                invalid_tool_calls: [{ name: "broken", args: "not-json" }],
+              },
+            },
+          ],
+        ],
+      },
+    });
+    setFinishReasonsAttribute(run, span);
+    assert.deepStrictEqual(span.attrs[ATTR_GEN_AI_RESPONSE_FINISH_REASONS], ["tool_call"]);
+  });
+
+  it("derives 'tool_call' when an empty direct tool_calls array masks nested kwargs tool calls", () => {
+    const span = makeSpan();
+    const run = makeRun({
+      outputs: {
+        generations: [
+          [
+            {
+              message: {
+                response_metadata: { status: "completed" },
+                tool_calls: [],
+                kwargs: { tool_calls: [{ id: "call_1", name: "get_weather", args: {} }] },
+              },
+            },
+          ],
+        ],
+      },
+    });
+    setFinishReasonsAttribute(run, span);
+    assert.deepStrictEqual(span.attrs[ATTR_GEN_AI_RESPONSE_FINISH_REASONS], ["tool_call"]);
+  });
+
+  it("derives 'length' from Responses API incomplete_details.reason 'max_output_tokens'", () => {
+    const span = makeSpan();
+    const run = makeRun({
+      outputs: {
+        generations: [
+          [
+            {
+              message: {
+                response_metadata: {
+                  status: "incomplete",
+                  incomplete_details: { reason: "max_output_tokens" },
+                },
+              },
+            },
+          ],
+        ],
+      },
+    });
+    setFinishReasonsAttribute(run, span);
+    assert.deepStrictEqual(span.attrs[ATTR_GEN_AI_RESPONSE_FINISH_REASONS], ["length"]);
+  });
+
+  it("derives 'content_filter' from Responses API incomplete_details.reason 'content_filter'", () => {
+    const span = makeSpan();
+    const run = makeRun({
+      outputs: {
+        generations: [
+          [
+            {
+              message: {
+                kwargs: {
+                  response_metadata: {
+                    status: "incomplete",
+                    incomplete_details: { reason: "content_filter" },
+                  },
+                },
+              },
+            },
+          ],
+        ],
+      },
+    });
+    setFinishReasonsAttribute(run, span);
+    assert.deepStrictEqual(span.attrs[ATTR_GEN_AI_RESPONSE_FINISH_REASONS], ["content_filter"]);
+  });
+
+  it("omits the finish reason when Responses API status is 'incomplete' with a missing/blank reason", () => {
+    const span = makeSpan();
+    const run = makeRun({
+      outputs: {
+        generations: [
+          [
+            {
+              message: {
+                response_metadata: {
+                  status: "incomplete",
+                  incomplete_details: { reason: "" },
+                },
+              },
+            },
+          ],
+        ],
+      },
+    });
+    setFinishReasonsAttribute(run, span);
+    assert.strictEqual((span.setAttribute as ReturnType<typeof vi.fn>).mock.calls.length, 0);
+  });
+
+  it("derives 'error' from Responses API status 'failed'", () => {
+    const span = makeSpan();
+    const run = makeRun({
+      outputs: {
+        generations: [[{ message: { response_metadata: { status: "failed" } } }]],
+      },
+    });
+    setFinishReasonsAttribute(run, span);
+    assert.deepStrictEqual(span.attrs[ATTR_GEN_AI_RESPONSE_FINISH_REASONS], ["error"]);
+  });
+
+  it("prefers a native finish_reason over the Responses API status derivation", () => {
+    const span = makeSpan();
+    const run = makeRun({
+      outputs: {
+        generations: [
+          [
+            {
+              message: {
+                response_metadata: { finish_reason: "stop", status: "incomplete" },
+              },
+            },
+          ],
+        ],
+      },
+    });
+    setFinishReasonsAttribute(run, span);
+    assert.deepStrictEqual(span.attrs[ATTR_GEN_AI_RESPONSE_FINISH_REASONS], ["stop"]);
   });
 });
 

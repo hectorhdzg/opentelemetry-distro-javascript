@@ -5,6 +5,7 @@ import { metrics, trace } from "@opentelemetry/api";
 import { logs } from "@opentelemetry/api-logs";
 import type { NodeSDKConfiguration } from "@opentelemetry/sdk-node";
 import { NodeSDK } from "@opentelemetry/sdk-node";
+import type { Instrumentation } from "@opentelemetry/instrumentation";
 import type { MetricReader, ViewOptions } from "@opentelemetry/sdk-metrics";
 import {
   type SpanProcessor,
@@ -20,42 +21,54 @@ import { InternalConfig } from "../shared/config.js";
 import { MetricHandler } from "../azureMonitor/metrics/index.js";
 import { TraceHandler } from "../azureMonitor/traces/handler.js";
 import { LogHandler } from "../azureMonitor/logs/index.js";
-import { AZURE_MONITOR_OPENTELEMETRY_VERSION } from "../types.js";
+import { ConnectionStringParser } from "../azureMonitor/utils/connectionStringParser.js";
 import { patchOpenTelemetryInstrumentationEnable } from "../utils/opentelemetryInstrumentationPatcher.js";
 import { parseResourceDetectorsFromEnvVar } from "../utils/common.js";
-import { getInstance as getStatsbeatInstance } from "../utils/statsbeat.js";
+import { getInstance as getSdkStatsInstance } from "../utils/sdkStats.js";
 import {
   setupAzureMonitorComponents,
   hasAzureMonitorConnectionString,
   validateAzureMonitorConfig,
-  getAzureMonitorStatsbeatFeatures,
+  getAzureMonitorSdkStatsFeatures,
 } from "../azureMonitor/index.js";
 import { isOtlpEnabled, createOtlpComponents } from "../otlp/index.js";
 import { A365Configuration, Agent365Exporter, A365SpanProcessor } from "../a365/index.js";
 import { configureA365Logger } from "../a365/logging.js";
+import {
+  GenAIMainAgentLogRecordProcessor,
+  GenAIMainAgentSpanProcessor,
+} from "../genai/mainAgent/index.js";
 import { SdkStatsDistroFeature, SdkStatsManager, setSdkStatsFeature } from "../sdkstats/index.js";
 import type {
   MicrosoftOpenTelemetryOptions,
   InstrumentationOptions,
   OpenAIAgentsInstrumentationConfig,
   LangChainInstrumentationConfig,
-  StatsbeatFeatures,
-  StatsbeatInstrumentations,
+  SdkStatsFeatures,
+  SdkStatsInstrumentations,
 } from "../types.js";
 import {
   MICROSOFT_OPENTELEMETRY_VERSION,
   APPLICATIONINSIGHTS_SDKSTATS_DISABLED,
-  StatsbeatFeature,
+  SdkStatsFeature,
 } from "../types.js";
 import { createInstrumentations, createSampler, createViews } from "./instrumentations.js";
 import { Logger } from "../shared/logging/index.js";
 
-process.env["AZURE_MONITOR_DISTRO_VERSION"] = AZURE_MONITOR_OPENTELEMETRY_VERSION;
 process.env["MICROSOFT_OPENTELEMETRY_VERSION"] = MICROSOFT_OPENTELEMETRY_VERSION;
 
 let sdk: NodeSDK;
 let disposeAzureMonitor: (() => void) | undefined;
 let isShutdown = false;
+
+// The console instrumentation is the only one that patches the global `console`.
+// NodeSDK.shutdown() does not disable instrumentations, so we track it and disable it
+// ourselves on shutdown / re-init to restore console. It is constructed disabled and
+// enabled by the SDK during registration (see createInstrumentations), which lets its
+// own disable() correctly restore the original console methods.
+let consoleInstrumentation: Instrumentation | undefined;
+
+const CONSOLE_INSTRUMENTATION_NAME = "@opentelemetry/instrumentation-console";
 
 const A365_DISABLED_INSTRUMENTATIONS_BY_DEFAULT: ReadonlyArray<keyof InstrumentationOptions> = [
   "http",
@@ -67,6 +80,7 @@ const A365_DISABLED_INSTRUMENTATIONS_BY_DEFAULT: ReadonlyArray<keyof Instrumenta
   "redis4",
   "bunyan",
   "winston",
+  "console",
 ];
 
 /**
@@ -128,9 +142,9 @@ export function _applyA365InstrumentationDefaults(
 }
 
 /**
- * Initialize Microsoft OpenTelemetry distribution.
+ * Initialize Microsoft OpenTelemetry.
  *
- * This is the primary entry point for the distro. It sets up OpenTelemetry
+ * This is the primary entry point. It sets up OpenTelemetry
  * providers and instrumentations, then attaches the configured exporters:
  * - Azure Monitor (when `options.azureMonitor` is provided or the
  *   `APPLICATIONINSIGHTS_CONNECTION_STRING` env var is set; explicitly disable
@@ -162,15 +176,14 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
     (!!options?.azureMonitor || hasAzureMonitorConnectionString(config));
   const azureMonitorEnabled = azureMonitorRequested && validateAzureMonitorConfig(config);
 
-  // ── SDKStats: record distro feature bits for ALL paths ──────────────────
-  // ── SDKStats: record distro feature bits for ALL paths ──────────────────
+  // ── SDKStats: record feature bits for ALL paths ─────────────────────────
   // These bits are emitted via SDKStats regardless of which exporter is
   // active. When Azure Monitor is enabled the exporter package's own
-  // Statsbeat picks them up via `AZURE_MONITOR_STATSBEAT_FEATURES`; when
-  // it is not, the standalone `SdkStatsManager` initialised below carries
-  // them to the well-known Statsbeat ingestion endpoint.
+  // SDKStats pipeline picks them up via `AZURE_MONITOR_STATSBEAT_FEATURES`;
+  // when it is not, the standalone `SdkStatsManager` initialised below
+  // carries them to the well-known SDKStats ingestion endpoint.
   const otlpActive = isOtlpEnabled();
-  setSdkStatsFeature(StatsbeatFeature.DISTRO);
+  setSdkStatsFeature(SdkStatsFeature.DISTRO);
   if (a365Config.enabled) {
     setSdkStatsFeature(SdkStatsDistroFeature.A365_EXPORT);
   }
@@ -181,13 +194,13 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
   // Reset dispose callback to avoid stale references from a previous initialization
   disposeAzureMonitor = undefined;
 
-  // ── Azure Monitor components (statsbeat, browser SDK loader, etc.) ─
+  // ── Azure Monitor components (SDK Stats, browser SDK loader, etc.) ─
   if (azureMonitorEnabled) {
     disposeAzureMonitor = setupAzureMonitorComponents(config);
   }
 
-  // ── Statsbeat (feature & instrumentation tracking for all paths) ──
-  const statsbeatInstrumentations: StatsbeatInstrumentations = {
+  // ── SDK Stats (feature & instrumentation tracking for all paths) ──
+  const sdkStatsInstrumentations: SdkStatsInstrumentations = {
     azureSdk: config.instrumentationOptions?.azureSdk?.enabled,
     mongoDb: config.instrumentationOptions?.mongoDb?.enabled,
     mySql: config.instrumentationOptions?.mySql?.enabled,
@@ -196,9 +209,9 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
     bunyan: config.instrumentationOptions?.bunyan?.enabled,
     winston: config.instrumentationOptions?.winston?.enabled,
   };
-  const statsbeatFeatures: StatsbeatFeatures = {
+  const sdkStatsFeatures: SdkStatsFeatures = {
     ...(azureMonitorEnabled
-      ? getAzureMonitorStatsbeatFeatures(config)
+      ? getAzureMonitorSdkStatsFeatures(config)
       : {
           browserSdkLoader: false,
           aadHandling: false,
@@ -209,13 +222,16 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
     otlp: otlpActive,
     customerSdkStats: process.env[APPLICATIONINSIGHTS_SDKSTATS_DISABLED]?.toLowerCase() === "true",
   };
-  getStatsbeatInstance().setStatsbeatFeatures(statsbeatInstrumentations, statsbeatFeatures);
+  getSdkStatsInstance().setSdkStatsFeatures(sdkStatsInstrumentations, sdkStatsFeatures);
 
   // ── Register global providers ─────────────────────────────────────
   // Remove global providers in OpenTelemetry, these would be overridden if present
   metrics.disable();
   trace.disable();
   logs.disable();
+  // Restore any console patch from a previous initialization before re-patching.
+  consoleInstrumentation?.disable();
+  consoleInstrumentation = undefined;
 
   // Clear the entire OpenTelemetry API global state to avoid version conflicts.
   // The disable() calls above remove individual providers but leave the `version` field
@@ -242,6 +258,11 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
   const instrumentations = createInstrumentations(config, {
     filterAzureMonitorRequests: azureMonitorEnabled,
   });
+  // The console instrumentation patches the global `console`, which NodeSDK.shutdown()
+  // does not restore; track it so we can disable it on shutdown / re-init.
+  consoleInstrumentation = instrumentations.find(
+    (instrumentation) => instrumentation.instrumentationName === CONSOLE_INSTRUMENTATION_NAME,
+  );
   const sampler = createSampler(config);
   const views: ViewOptions[] = createViews(config);
 
@@ -263,6 +284,18 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
   const spanProcessors: SpanProcessor[] = [...(options?.spanProcessors || [])];
   const logRecordProcessors: LogRecordProcessor[] = [...(options?.logRecordProcessors || [])];
   const customViews: ViewOptions[] = [...(options?.views || [])];
+
+  // ── GenAI main-agent propagation ─────────────────────────────────
+  // Prepend the main-agent processors so their on_start / on_emit run
+  // BEFORE any Batch* export processor appended later in the pipeline.
+  // This enriches each span/log once and the enriched attributes are
+  // then visible to Azure Monitor (and any other downstream exporter).
+  // Mirrors microsoft/opentelemetry-distro-python which gates these
+  // processors on `enable_azure_monitor`.
+  if (azureMonitorEnabled) {
+    spanProcessors.unshift(new GenAIMainAgentSpanProcessor());
+    logRecordProcessors.unshift(new GenAIMainAgentLogRecordProcessor());
+  }
 
   const metricReaders: MetricReader[] = [
     ...(metricHandler ? [metricHandler.getMetricReader()] : []),
@@ -298,6 +331,7 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
         domainOverride: a365Config.domainOverride,
         authScopes: a365Config.authScopes,
         tokenResolver: a365Config.tokenResolver,
+        contextualTokenResolver: a365Config.contextualTokenResolver,
         useS2SEndpoint: a365Config.useS2SEndpoint,
         ...(a365Config.maxQueueSize !== undefined && {
           maxQueueSize: a365Config.maxQueueSize,
@@ -317,8 +351,11 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
         ...(a365Config.maxPayloadBytes !== undefined && {
           maxPayloadBytes: a365Config.maxPayloadBytes,
         }),
+        ...(a365Config.durableDelivery !== undefined && {
+          durableDelivery: a365Config.durableDelivery,
+        }),
       });
-      spanProcessors.push(new BatchSpanProcessor(a365Exporter));
+      spanProcessors.push(new BatchSpanProcessor(a365Exporter, a365Exporter.getBufferConfig()));
     }
   }
 
@@ -347,7 +384,9 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
         exportIntervalMillis: config.metricExportIntervalMillis,
       }),
     );
-    logRecordProcessors.push(new SimpleLogRecordProcessor(new ConsoleLogRecordExporter()));
+    logRecordProcessors.push(
+      new SimpleLogRecordProcessor({ exporter: new ConsoleLogRecordExporter() }),
+    );
     setSdkStatsFeature(SdkStatsDistroFeature.CONSOLE_EXPORT);
   }
 
@@ -376,16 +415,37 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
   isShutdown = false;
   sdk.start();
 
-  // ── SDKStats: standalone pipeline for non-Azure-Monitor paths ─────
-  // When Azure Monitor is enabled the exporter package emits SDKStats
-  // itself (reading bits set above via `AZURE_MONITOR_STATSBEAT_FEATURES`).
-  // For A365-only / OTLP-only / Console-only customers we spin up our
-  // own MeterProvider + AzureMonitorStatsbeatExporter pipeline so the
-  // distro feature/instrumentation bits still reach the well-known
-  // statsbeat endpoint.
-  if (!azureMonitorEnabled) {
-    void SdkStatsManager.getInstance().initialize();
-  }
+  // ── SDKStats: standalone pipeline ─────────────────────────────────
+  // The standalone pipeline ALWAYS runs so per-export network SDKStats
+  // (`Request_Success_Count` gauge) for A365 / OTLP transmits is captured.
+  //
+  // - When Azure Monitor is enabled (`networkOnly: true`): only the
+  //   network gauges are registered. The Feature / Feature.instrumentations
+  //   long-interval metrics are owned by the AzMon exporter, with our
+  //   feature bits bridged in via `setSdkStatsFeatures` →
+  //   `AZURE_MONITOR_STATSBEAT_FEATURES`. The network pipeline is safe to
+  //   coexist because the (endpoint, host) attributes partition the
+  //   time series (AzMon ingestion hosts vs A365 / OTLP hosts).
+  // - When Azure Monitor is disabled: the standalone pipeline owns the
+  //   full set (feature + instrumentation + network) and ships them to
+  //   the well-known SDKStats endpoint.
+  //
+  // `cikey` is reported as a customDimension on every SDKStats
+  // observation per the spec, but ONLY when the customer is exporting
+  // to an Application Insights resource. For OTLP-only / Console-only
+  // customers we leave it undefined so the dimension is omitted
+  // entirely rather than tagged with an empty / meaningless value.
+  const sdkStatsCikey = (() => {
+    const cs =
+      config.azureMonitorExporterOptions?.connectionString ??
+      process.env["APPLICATIONINSIGHTS_CONNECTION_STRING"];
+    if (!cs) return undefined;
+    return ConnectionStringParser.parse(cs).instrumentationkey || undefined;
+  })();
+  void SdkStatsManager.getInstance().initialize({
+    networkOnly: azureMonitorEnabled,
+    cikey: sdkStatsCikey,
+  });
 
   // Initialize GenAI instrumentations after providers are registered so any
   // tracer they capture is backed by the active SDK provider.
@@ -395,6 +455,7 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
   // unless explicitly disabled).
   initializeGenAIInstrumentations(
     applyA365Defaults ? config.instrumentationOptions : options?.instrumentationOptions,
+    options?.enableSensitiveData ?? false,
   );
 }
 
@@ -403,6 +464,9 @@ export function useMicrosoftOpenTelemetry(options?: MicrosoftOpenTelemetryOption
  */
 export function shutdownMicrosoftOpenTelemetry(): Promise<void> {
   isShutdown = true;
+  // Unpatch `console` — NodeSDK.shutdown() does not disable instrumentations.
+  consoleInstrumentation?.disable();
+  consoleInstrumentation = undefined;
   disposeAzureMonitor?.();
   const sdkShutdown = sdk?.shutdown() ?? Promise.resolve();
   return sdkShutdown
@@ -426,7 +490,10 @@ export function _getSdkInstance(): NodeSDK | undefined {
 // is never an error.  Here we eagerly import the optional @openai/agents and
 // @langchain/core packages, so we must tolerate them not being installed.
 // This will be migrated to upstream OTel instrumentation hooks once they are ready.
-function initializeGenAIInstrumentations(options?: InstrumentationOptions): void {
+function initializeGenAIInstrumentations(
+  options?: InstrumentationOptions,
+  enableSensitiveData = false,
+): void {
   const openAIOptions = options?.openaiAgents;
   if (openAIOptions?.enabled !== false) {
     void initializeOpenAIAgentsInstrumentation(openAIOptions ?? {});
@@ -434,7 +501,7 @@ function initializeGenAIInstrumentations(options?: InstrumentationOptions): void
 
   const langChainOptions = options?.langchain;
   if (langChainOptions?.enabled !== false) {
-    void initializeLangChainInstrumentation(langChainOptions ?? {});
+    void initializeLangChainInstrumentation(langChainOptions ?? {}, enableSensitiveData);
   }
 }
 
@@ -463,6 +530,7 @@ async function initializeOpenAIAgentsInstrumentation(
 
 async function initializeLangChainInstrumentation(
   _options: LangChainInstrumentationConfig,
+  enableSensitiveData = false,
 ): Promise<void> {
   try {
     const [{ LangChainTraceInstrumentor }, callbackManagerModule] = await Promise.all([
@@ -470,7 +538,7 @@ async function initializeLangChainInstrumentation(
       import("@langchain/core/callbacks/manager"),
     ]);
     if (isShutdown) return;
-    LangChainTraceInstrumentor.instrument(callbackManagerModule);
+    LangChainTraceInstrumentor.instrument(callbackManagerModule, { enableSensitiveData });
   } catch (error) {
     Logger.getInstance().debug(
       "[GenAI] Skipping LangChain instrumentation, @langchain/core is not installed.",

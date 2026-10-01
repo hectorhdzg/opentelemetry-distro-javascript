@@ -130,8 +130,7 @@ export function createOtlpComponents(): OtlpComponents {
   // OTEL_EXPORTER_OTLP_HEADERS, OTEL_EXPORTER_OTLP_TRACES_HEADERS,
   // OTEL_EXPORTER_OTLP_TIMEOUT, OTEL_EXPORTER_OTLP_TRACES_TIMEOUT,
   // OTEL_EXPORTER_OTLP_COMPRESSION, OTEL_EXPORTER_OTLP_TRACES_COMPRESSION
-  const traceExporter = new OTLPTraceExporter();
-  components.spanProcessor = new BatchSpanProcessor(traceExporter);
+  components.spanProcessor = new BatchSpanProcessor(new OTLPTraceExporter());
 
   // Metric exporter — reads OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_EXPORTER_OTLP_METRICS_ENDPOINT,
   // OTEL_EXPORTER_OTLP_HEADERS, OTEL_EXPORTER_OTLP_METRICS_HEADERS,
@@ -139,17 +138,17 @@ export function createOtlpComponents(): OtlpComponents {
   // OTEL_EXPORTER_OTLP_COMPRESSION, OTEL_EXPORTER_OTLP_METRICS_COMPRESSION,
   // OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE,
   // OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION
-  const metricExporter = new OTLPMetricExporter();
   components.metricReader = new PeriodicExportingMetricReader({
-    exporter: metricExporter,
+    exporter: new OTLPMetricExporter(),
   });
 
   // Log exporter — reads OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_EXPORTER_OTLP_LOGS_ENDPOINT,
   // OTEL_EXPORTER_OTLP_HEADERS, OTEL_EXPORTER_OTLP_LOGS_HEADERS,
   // OTEL_EXPORTER_OTLP_TIMEOUT, OTEL_EXPORTER_OTLP_LOGS_TIMEOUT,
   // OTEL_EXPORTER_OTLP_COMPRESSION, OTEL_EXPORTER_OTLP_LOGS_COMPRESSION
-  const logExporter = new OTLPLogExporter();
-  components.logRecordProcessor = new BatchLogRecordProcessor(logExporter);
+  components.logRecordProcessor = new BatchLogRecordProcessor({
+    exporter: new OTLPLogExporter(),
+  });
 
   return components;
 }

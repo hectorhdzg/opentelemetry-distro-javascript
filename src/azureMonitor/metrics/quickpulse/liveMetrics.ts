@@ -51,7 +51,7 @@ import type {
 } from "./types.js";
 import { QuickPulseOpenTelemetryMetricNames } from "./types.js";
 import { hrTimeToMilliseconds, suppressTracing } from "@opentelemetry/core";
-import { getInstance } from "../../../utils/statsbeat.js";
+import { getInstance } from "../../../utils/sdkStats.js";
 import type { CollectionConfigurationError } from "../../generated/index.js";
 import { Filter } from "./filtering/filter.js";
 import { Validator } from "./filtering/validator.js";
@@ -127,7 +127,7 @@ export class LiveMetrics {
   private lastExceptionRate: { count: number; time: number } = { count: 0, time: 0 };
   private lastCpuUsage: NodeJS.CpuUsage;
   private lastHrTime: bigint;
-  private statsbeatOptionsUpdated = false;
+  private sdkStatsOptionsUpdated = false;
   private etag: string = "";
   private errorTracker: CollectionConfigurationErrorTracker =
     new CollectionConfigurationErrorTracker();
@@ -137,15 +137,15 @@ export class LiveMetrics {
   private derivedMetricProjection: Projection = new Projection();
   private validator: Validator = new Validator();
   private filter: Filter = new Filter();
+  private _isShutdown: boolean = false;
   // type: Map<telemetryType, Map<id, FilterConjunctionGroupInfo[]>>
   private validDocumentFilterConjuctionGroupInfos: Map<
     string,
     Map<string, FilterConjunctionGroupInfo[]>
   > = new Map();
   /**
-   * Initializes a new instance of the StandardMetrics class.
-   * @param config - Distro configuration.
-   * @param options - Standard Metrics options.
+   * Initializes a new instance of the LiveMetrics class.
+   * @param config - Microsoft OpenTelemetry configuration.
    */
   constructor(config: InternalConfig) {
     this.config = config;
@@ -203,10 +203,15 @@ export class LiveMetrics {
   }
 
   public shutdown(): void {
-    this.meterProvider?.shutdown();
+    this._isShutdown = true;
+    clearTimeout(this.handle as any);
+    this.deactivateMetrics();
   }
 
   private async goQuickpulse(): Promise<void> {
+    if (this._isShutdown) {
+      return;
+    }
     if (!this.isCollectingData) {
       // If not collecting, Ping
       try {
@@ -223,15 +228,20 @@ export class LiveMetrics {
         this.quickPulseDone(undefined);
       }
 
-      this.handle = <any>setTimeout(this.goQuickpulse.bind(this), this.pingInterval);
-      this.handle.unref();
+      if (!this._isShutdown) {
+        this.handle = <any>setTimeout(this.goQuickpulse.bind(this), this.pingInterval);
+        this.handle.unref();
+      }
     }
-    if (this.isCollectingData) {
+    if (this.isCollectingData && !this._isShutdown) {
       this.activateMetrics({ collectionInterval: this.postInterval });
     }
   }
 
   private async quickPulseDone(response: QuickpulseResponse | undefined): Promise<void> {
+    if (this._isShutdown) {
+      return;
+    }
     if (!response) {
       if (!this.isCollectingData) {
         if (Date.now() - this.lastSuccessTime >= MAX_PING_WAIT_TIME) {
@@ -259,8 +269,10 @@ export class LiveMetrics {
         this.etag = "";
         this.deactivateMetrics();
 
-        this.handle = <any>setTimeout(this.goQuickpulse.bind(this), this.pingInterval);
-        this.handle.unref();
+        if (!this._isShutdown) {
+          this.handle = <any>setTimeout(this.goQuickpulse.bind(this), this.pingInterval);
+          this.handle.unref();
+        }
       }
 
       const endpointRedirect = response.xMsQpsServiceEndpointRedirectV2;
@@ -282,10 +294,10 @@ export class LiveMetrics {
     if (this.meterProvider) {
       return;
     }
-    // Turn on live metrics active collection for statsbeat
-    if (!this.statsbeatOptionsUpdated) {
-      getInstance().setStatsbeatFeatures({}, { liveMetrics: true });
-      this.statsbeatOptionsUpdated = true;
+    // Turn on live metrics active collection for SDK Stats
+    if (!this.sdkStatsOptionsUpdated) {
+      getInstance().setSdkStatsFeatures({}, { liveMetrics: true });
+      this.sdkStatsOptionsUpdated = true;
     }
     this.totalDependencyCount = 0;
     this.totalExceptionCount = 0;

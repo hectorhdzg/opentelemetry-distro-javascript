@@ -9,10 +9,22 @@ import {
   ATTR_GEN_AI_CONVERSATION_ID,
   ATTR_GEN_AI_INPUT_MESSAGES,
   ATTR_GEN_AI_OPERATION_NAME,
+  ATTR_GEN_AI_OUTPUT_TYPE,
   ATTR_GEN_AI_OUTPUT_MESSAGES,
   ATTR_GEN_AI_PROVIDER_NAME,
+  ATTR_GEN_AI_REQUEST_CHOICE_COUNT,
+  ATTR_GEN_AI_REQUEST_FREQUENCY_PENALTY,
+  ATTR_GEN_AI_REQUEST_MAX_TOKENS,
   ATTR_GEN_AI_REQUEST_MODEL,
+  ATTR_GEN_AI_REQUEST_PRESENCE_PENALTY,
+  ATTR_GEN_AI_REQUEST_SEED,
+  ATTR_GEN_AI_REQUEST_STOP_SEQUENCES,
+  ATTR_GEN_AI_REQUEST_STREAM,
+  ATTR_GEN_AI_REQUEST_TEMPERATURE,
+  ATTR_GEN_AI_REQUEST_TOP_K,
+  ATTR_GEN_AI_REQUEST_TOP_P,
   ATTR_GEN_AI_RESPONSE_ID,
+  ATTR_GEN_AI_RESPONSE_FINISH_REASONS,
   ATTR_GEN_AI_RESPONSE_MODEL,
   ATTR_GEN_AI_SYSTEM_INSTRUCTIONS,
   ATTR_GEN_AI_TOOL_CALL_ARGUMENTS,
@@ -28,7 +40,7 @@ import {
   GEN_AI_OPERATION_INVOKE_AGENT,
 } from "../../index.js";
 import { serializeMessages, safeSerializeToJson } from "../../../a365/message-utils.js";
-import { MessageRole, A365_MESSAGE_SCHEMA_VERSION } from "../../../a365/contracts.js";
+import { MessageRole, FinishReason } from "../../../a365/contracts.js";
 import type {
   ChatMessage,
   OutputMessage,
@@ -72,7 +84,7 @@ export function setAgentAttributes(run: Run, span: Span) {
 }
 
 // Tool attributes
-export function setToolAttributes(run: Run, span: Span) {
+export function setToolAttributes(run: Run, span: Span, captureContent = false) {
   if (run.run_type !== "tool") {
     return;
   }
@@ -83,32 +95,39 @@ export function setToolAttributes(run: Run, span: Span) {
   if (isString(run.name)) {
     span.setAttribute(ATTR_GEN_AI_TOOL_NAME, run.name);
   }
-  if (run.inputs) {
-    const argsValue = run.inputs?.input ?? run.inputs;
-    span.setAttribute(
-      ATTR_GEN_AI_TOOL_CALL_ARGUMENTS,
-      safeSerializeToJson(
-        typeof argsValue === "object" ? (argsValue as Record<string, unknown>) : String(argsValue),
-        "arguments",
-      ),
-    );
-  }
 
-  // Tool result: v0 uses output.kwargs.content, v1 returns output as a plain string or has content directly
-  const toolResult =
-    run.outputs?.output?.kwargs?.content ??
-    (isString(run.outputs?.output) ? run.outputs.output : null) ??
-    run.outputs?.output?.content;
-  if (toolResult != null) {
-    span.setAttribute(
-      ATTR_GEN_AI_TOOL_CALL_RESULT,
-      safeSerializeToJson(
-        typeof toolResult === "object"
-          ? (toolResult as Record<string, unknown>)
-          : String(toolResult),
-        "result",
-      ),
-    );
+  // Tool arguments and result are sensitive message content — only recorded
+  // when content capture is enabled (`captureContent`, i.e. enableSensitiveData).
+  if (captureContent) {
+    if (run.inputs) {
+      const argsValue = run.inputs?.input ?? run.inputs;
+      span.setAttribute(
+        ATTR_GEN_AI_TOOL_CALL_ARGUMENTS,
+        safeSerializeToJson(
+          typeof argsValue === "object"
+            ? (argsValue as Record<string, unknown>)
+            : String(argsValue),
+          "arguments",
+        ),
+      );
+    }
+
+    // Tool result: v0 uses output.kwargs.content, v1 returns output as a plain string or has content directly
+    const toolResult =
+      run.outputs?.output?.kwargs?.content ??
+      (isString(run.outputs?.output) ? run.outputs.output : null) ??
+      run.outputs?.output?.content;
+    if (toolResult != null) {
+      span.setAttribute(
+        ATTR_GEN_AI_TOOL_CALL_RESULT,
+        safeSerializeToJson(
+          typeof toolResult === "object"
+            ? (toolResult as Record<string, unknown>)
+            : String(toolResult),
+          "result",
+        ),
+      );
+    }
   }
 
   span.setAttribute(ATTR_GEN_AI_TOOL_TYPE, "extension");
@@ -144,10 +163,7 @@ export function setInputMessagesAttribute(run: Run, span: Span) {
   }
 
   if (chatMessages.length > 0) {
-    const wrapper: InputMessages = {
-      version: A365_MESSAGE_SCHEMA_VERSION,
-      messages: chatMessages,
-    };
+    const wrapper: InputMessages = { messages: chatMessages };
     span.setAttribute(ATTR_GEN_AI_INPUT_MESSAGES, serializeMessages(wrapper));
   }
 }
@@ -432,10 +448,7 @@ export function setOutputMessagesAttribute(run: Run, span: Span) {
   }
 
   if (outputMessages.length > 0) {
-    const wrapper: OutputMessages = {
-      version: A365_MESSAGE_SCHEMA_VERSION,
-      messages: outputMessages,
-    };
+    const wrapper: OutputMessages = { messages: outputMessages };
     span.setAttribute(ATTR_GEN_AI_OUTPUT_MESSAGES, serializeMessages(wrapper));
   }
 }
@@ -461,12 +474,22 @@ export function getRequestModel(run: Run): string | undefined {
 // served the request).
 export function getResponseModel(run: Run): string | undefined {
   const llmOutput = run.outputs?.llmOutput as Record<string, unknown> | undefined;
+  const v1Metadata = run.outputs?.generations?.[0]?.[0]?.message?.response_metadata as
+    Record<string, unknown> | undefined;
+  const v0Metadata = run.outputs?.generations?.[0]?.[0]?.message?.kwargs?.response_metadata as
+    Record<string, unknown> | undefined;
+
   return [
-    // v1: response_metadata directly on message
-    run.outputs?.generations?.[0]?.[0]?.message?.response_metadata?.model_name,
-    // v0: response_metadata nested under kwargs
-    run.outputs?.generations?.[0]?.[0]?.message?.kwargs?.response_metadata?.model_name,
-    // LLMResult.llmOutput.model_name (common for Chat models)
+    // v1: response_metadata directly on message. Prefer the canonical OpenAI
+    // Responses-API field (`model`) and fall back to the `model_name` alias
+    // LangChain keeps "for backwards compat with chat completion calls" (see
+    // langchain-ai/langchainjs libs/providers/langchain-openai/src/converters/responses.ts).
+    v1Metadata?.model,
+    v1Metadata?.model_name,
+    // v0: response_metadata nested under kwargs.
+    v0Metadata?.model,
+    v0Metadata?.model_name,
+    // LLMResult.llmOutput.* (common for Chat Completions API).
     llmOutput?.model_name,
     llmOutput?.model,
   ]
@@ -528,6 +551,149 @@ export function setModelAttribute(run: Run, span: Span) {
   }
 }
 
+// Choice count - Helper to extract the requested number of candidate completions
+// (`n` in OpenAI / LangChain `invocation_params`). Per OTel GenAI semconv, this
+// attribute is conditionally required when available in the request and not
+// equal to 1, so we omit it for the common single-completion case to avoid
+// emitting redundant data.
+export function getChoiceCount(run: Run): number | undefined {
+  const invocationParams = run.extra?.invocation_params as Record<string, unknown> | undefined;
+  const raw = invocationParams?.n;
+  if (typeof raw === "number" && Number.isFinite(raw) && Number.isInteger(raw) && raw >= 1) {
+    return raw;
+  }
+  if (typeof raw === "string") {
+    const parsed = Number.parseInt(raw, 10);
+    if (Number.isFinite(parsed) && parsed >= 1) return parsed;
+  }
+  return undefined;
+}
+
+export function setChoiceCountAttribute(run: Run, span: Span) {
+  const n = getChoiceCount(run);
+  if (n !== undefined && n !== 1) {
+    span.setAttribute(ATTR_GEN_AI_REQUEST_CHOICE_COUNT, n);
+  }
+}
+
+// LangChain exposes provider-specific invocation params as unknown values. Match the upstream
+// OpenTelemetry GenAI instrumentations by accepting typed SDK values without coercing strings.
+function firstDefined(params: Record<string, unknown>, keys: string[]): unknown {
+  for (const key of keys) {
+    if (params[key] !== undefined && params[key] !== null) {
+      return params[key];
+    }
+  }
+  return undefined;
+}
+
+function integer(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && Number.isInteger(value)
+    ? value
+    : undefined;
+}
+
+function stringArray(value: unknown): string[] | undefined {
+  if (isString(value) && value.length > 0) return [value];
+  if (!Array.isArray(value)) return undefined;
+  const strings = value.filter((item): item is string => isString(item) && item.length > 0);
+  return strings.length === value.length && strings.length > 0 ? strings : undefined;
+}
+
+const OUTPUT_TYPES: readonly string[] = ["text", "json", "image"];
+
+const OUTPUT_TYPE_ALIASES: Readonly<Record<string, string>> = {
+  json_object: "json",
+  json_schema: "json",
+  b64_json: "image",
+  url: "image",
+};
+
+function normalizeOutputType(value: unknown): string | undefined {
+  if (!isString(value)) return undefined;
+  const normalized = value.trim().toLowerCase();
+  return OUTPUT_TYPES.includes(normalized) ? normalized : OUTPUT_TYPE_ALIASES[normalized];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function getOutputType(params: Record<string, unknown>): string | undefined {
+  const explicit = firstDefined(params, ["output_type", "outputType"]);
+  const explicitType = normalizeOutputType(explicit);
+  if (explicitType) return explicitType;
+
+  const responseFormat = firstDefined(params, ["response_format", "responseFormat"]);
+  if (isRecord(responseFormat)) {
+    const formatType = normalizeOutputType(responseFormat.type);
+    if (formatType) return formatType;
+  }
+  const responseFormatType = normalizeOutputType(responseFormat);
+  if (responseFormatType) return responseFormatType;
+
+  const text = params.text;
+  if (isRecord(text)) {
+    const format = text.format;
+    if (isRecord(format)) {
+      return normalizeOutputType(format.type);
+    }
+  }
+  return undefined;
+}
+
+// Request attributes surfaced by LangChain under extra.invocation_params.
+// Both OpenAI-style snake_case and LangChain/provider camelCase aliases are
+// accepted because callback payloads vary by model integration and API path.
+export function setRequestAttributes(run: Run, span: Span): void {
+  const params = run.extra?.invocation_params;
+  if (!isRecord(params)) return;
+
+  const outputType = getOutputType(params);
+  if (outputType) span.setAttribute(ATTR_GEN_AI_OUTPUT_TYPE, outputType);
+
+  const numberAttributes: Array<[string, string[]]> = [
+    [ATTR_GEN_AI_REQUEST_FREQUENCY_PENALTY, ["frequency_penalty", "frequencyPenalty"]],
+    [ATTR_GEN_AI_REQUEST_PRESENCE_PENALTY, ["presence_penalty", "presencePenalty"]],
+    [ATTR_GEN_AI_REQUEST_TEMPERATURE, ["temperature"]],
+    [ATTR_GEN_AI_REQUEST_TOP_P, ["top_p", "topP"]],
+  ];
+  for (const [attribute, keys] of numberAttributes) {
+    const value = firstDefined(params, keys);
+    if (typeof value === "number" && Number.isFinite(value)) {
+      span.setAttribute(attribute, value);
+    }
+  }
+
+  const maxTokens = integer(
+    firstDefined(params, [
+      "max_tokens",
+      "maxTokens",
+      "max_completion_tokens",
+      "maxCompletionTokens",
+      "max_output_tokens",
+      "maxOutputTokens",
+    ]),
+  );
+  if (maxTokens !== undefined) {
+    span.setAttribute(ATTR_GEN_AI_REQUEST_MAX_TOKENS, maxTokens);
+  }
+
+  const seed = integer(firstDefined(params, ["seed"]));
+  if (seed !== undefined) span.setAttribute(ATTR_GEN_AI_REQUEST_SEED, seed);
+
+  const topK = integer(firstDefined(params, ["top_k", "topK"]));
+  if (topK !== undefined) span.setAttribute(ATTR_GEN_AI_REQUEST_TOP_K, topK);
+
+  const stopSequences = stringArray(
+    firstDefined(params, ["stop", "stop_sequences", "stopSequences"]),
+  );
+  if (stopSequences) span.setAttribute(ATTR_GEN_AI_REQUEST_STOP_SEQUENCES, stopSequences);
+
+  const stream = firstDefined(params, ["stream", "streaming"]);
+  if (typeof stream === "boolean") span.setAttribute(ATTR_GEN_AI_REQUEST_STREAM, stream);
+}
+
 // Response identifier - Helper to extract the unique response id returned by
 // the underlying provider (e.g. OpenAI chat completion id). LangChain.js
 // typically surfaces this as the AIMessage id (top-level for v1, nested
@@ -542,8 +708,7 @@ export function setModelAttribute(run: Run, span: Span) {
 // transport-level response identifier.
 export function getResponseId(run: Run): string | undefined {
   const message = run.outputs?.generations?.[0]?.[0]?.message as
-    | Record<string, unknown>
-    | undefined;
+    Record<string, unknown> | undefined;
   const messageKwargs = message?.kwargs as Record<string, unknown> | undefined;
   const responseMetadata =
     (message?.response_metadata as Record<string, unknown> | undefined) ??
@@ -576,6 +741,132 @@ export function setResponseIdAttribute(run: Run, span: Span): void {
   const responseId = getResponseId(run);
   if (responseId) {
     span.setAttribute(ATTR_GEN_AI_RESPONSE_ID, responseId);
+  }
+}
+
+// Finish reasons - one per generation, parallel to n. Chat Completions:
+// generationInfo/response_metadata.finish_reason. Responses API: derived from
+// status/incomplete_details (no finish_reason field).
+export function getFinishReasons(run: Run): string[] | undefined {
+  const generations = run.outputs?.generations;
+  if (!Array.isArray(generations)) {
+    return undefined;
+  }
+
+  const reasons: string[] = [];
+  for (const choice of generations) {
+    if (!Array.isArray(choice)) continue;
+    for (const item of choice as Record<string, unknown>[]) {
+      if (!item || typeof item !== "object") continue;
+      const message = item?.message as Record<string, unknown> | undefined;
+      const messageKwargs = message?.kwargs as Record<string, unknown> | undefined;
+      const responseMetadata =
+        (message?.response_metadata as Record<string, unknown> | undefined) ??
+        (messageKwargs?.response_metadata as Record<string, unknown> | undefined);
+      const generationInfo = item?.generationInfo as Record<string, unknown> | undefined;
+
+      // Native Chat Completions finish_reason (preferred). Pick the first
+      // non-blank string candidate; a blank/non-string value in an earlier
+      // source must not mask a valid later one (so `??` is not sufficient).
+      let reason: string | undefined;
+      for (const candidate of [
+        generationInfo?.finish_reason,
+        responseMetadata?.finish_reason,
+        message?.finish_reason,
+        messageKwargs?.finish_reason,
+      ]) {
+        if (isString(candidate) && candidate.trim().length > 0) {
+          reason = normalizeFinishReason(candidate);
+          break;
+        }
+      }
+
+      // Responses API derivation (no native finish_reason field).
+      if (!reason && message) {
+        reason = deriveResponsesFinishReason(message, responseMetadata);
+      }
+
+      // `gen_ai.response.finish_reasons` is positional and must correspond 1:1
+      // with the received generations. OTel string arrays cannot hold gaps, so
+      // if any generation lacks a valid reason, omit the attribute entirely
+      // rather than emit a compacted/misaligned array.
+      if (!reason) return undefined;
+      reasons.push(reason);
+    }
+  }
+
+  return reasons.length > 0 ? reasons : undefined;
+}
+
+// Map a provider-reported finish_reason string to the repo's GenAI
+// `FinishReason` contract value. OpenAI Chat Completions reports the plural
+// `finish_reason: "tool_calls"` (and the legacy `"function_call"`), but the
+// shared contract value is `"tool_call"` (see `FinishReason`, matched by the
+// Python distro's `messages.py`). Unrecognized values are passed through
+// trimmed so legitimate reasons are not dropped.
+const FINISH_REASON_ALIASES: Record<string, FinishReason> = {
+  stop: FinishReason.STOP,
+  length: FinishReason.LENGTH,
+  content_filter: FinishReason.CONTENT_FILTER,
+  tool_call: FinishReason.TOOL_CALL,
+  tool_calls: FinishReason.TOOL_CALL,
+  function_call: FinishReason.TOOL_CALL,
+  error: FinishReason.ERROR,
+};
+
+function normalizeFinishReason(value: string): string {
+  const trimmed = value.trim();
+  return FINISH_REASON_ALIASES[trimmed.toLowerCase()] ?? trimmed;
+}
+
+// Map a Responses status/incomplete_details to a Chat-Completions-style reason.
+function deriveResponsesFinishReason(
+  message: Record<string, unknown>,
+  responseMetadata: Record<string, unknown> | undefined,
+): string | undefined {
+  const status = responseMetadata?.status;
+  if (!isString(status)) return undefined;
+
+  switch (status) {
+    case "completed":
+      return messageHasToolCalls(message) ? FinishReason.TOOL_CALL : FinishReason.STOP;
+    case "incomplete": {
+      const incompleteDetails = responseMetadata?.incomplete_details as
+        Record<string, unknown> | undefined;
+      const detailReason = incompleteDetails?.reason;
+      if (detailReason === "max_output_tokens") return FinishReason.LENGTH;
+      if (detailReason === "content_filter") return FinishReason.CONTENT_FILTER;
+      // No conformant mapping for this status; omit rather than emit a
+      // non-standard finish-reason value.
+      return undefined;
+    }
+    case "failed":
+    case "cancelled":
+      return FinishReason.ERROR;
+    default:
+      return undefined;
+  }
+}
+
+// Any tool calls present, including malformed ones (invalid_tool_calls still
+// count as a tool call, mapped to the "tool_call" contract value).
+function messageHasToolCalls(message: Record<string, unknown>): boolean {
+  for (const key of ["tool_calls", "invalid_tool_calls"]) {
+    const candidates = [
+      getNestedValue(message, key),
+      getNestedValue(message, "lc_kwargs", key),
+      getNestedValue(message, "kwargs", key),
+    ];
+    if (candidates.some((calls) => Array.isArray(calls) && calls.length > 0)) return true;
+  }
+  return false;
+}
+
+// Set gen_ai.response.finish_reasons when any reason is available.
+export function setFinishReasonsAttribute(run: Run, span: Span): void {
+  const finishReasons = getFinishReasons(run);
+  if (finishReasons) {
+    span.setAttribute(ATTR_GEN_AI_RESPONSE_FINISH_REASONS, finishReasons);
   }
 }
 

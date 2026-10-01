@@ -14,20 +14,23 @@ import {
 import type { MeterProvider, ViewOptions } from "@opentelemetry/sdk-metrics";
 import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
-import type { StatsbeatEnvironmentConfig } from "../../../src/types.js";
+import type { SdkStatsEnvironmentConfig } from "../../../src/types.js";
 import {
   AZURE_MONITOR_STATSBEAT_FEATURES,
   APPLICATIONINSIGHTS_SDKSTATS_DISABLED,
-  StatsbeatFeature,
-  StatsbeatInstrumentation,
-  StatsbeatInstrumentationMap,
+  SdkStatsFeature,
+  SdkStatsInstrumentation,
+  SdkStatsInstrumentationMap,
 } from "../../../src/types.js";
 import { getOsPrefix } from "../../../src/azureMonitor/utils/common.js";
 import type { ReadableSpan, Span, SpanProcessor } from "@opentelemetry/sdk-trace-base";
 import type { LogRecordProcessor, SdkLogRecord } from "@opentelemetry/sdk-logs";
-import { getInstance } from "../../../src/utils/statsbeat.js";
+import { getInstance } from "../../../src/utils/sdkStats.js";
 import type { Instrumentation, InstrumentationConfig } from "@opentelemetry/instrumentation";
 import { describe, it, beforeEach, afterEach, expect, assert, vi, afterAll } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { OpenAIAgentsTraceInstrumentor } from "../../../src/genai/instrumentations/openai/openAIAgentsTraceInstrumentor.js";
 import { LangChainTraceInstrumentor } from "../../../src/genai/instrumentations/langchain/langchainTraceInstrumentor.js";
 
@@ -62,6 +65,7 @@ describe("Main functions", () => {
 
   beforeEach(() => {
     originalEnv = process.env;
+    delete process.env[AZURE_MONITOR_STATSBEAT_FEATURES];
     // Preserve whatever the global OTel API object looks like before each test
     savedOTelGlobal = (globalThis as Record<symbol, unknown>)[GLOBAL_OPENTELEMETRY_API_KEY];
   });
@@ -84,15 +88,10 @@ describe("Main functions", () => {
   });
 
   it("sets MICROSOFT_OPENTELEMETRY_VERSION env var on import so the Azure Monitor exporter reports the 'mot' sdkVersion prefix", async () => {
-    const { MICROSOFT_OPENTELEMETRY_VERSION, AZURE_MONITOR_OPENTELEMETRY_VERSION } =
-      await import("../../../src/types.js");
+    const { MICROSOFT_OPENTELEMETRY_VERSION } = await import("../../../src/types.js");
     assert.strictEqual(
       process.env["MICROSOFT_OPENTELEMETRY_VERSION"],
       MICROSOFT_OPENTELEMETRY_VERSION,
-    );
-    assert.strictEqual(
-      process.env["AZURE_MONITOR_DISTRO_VERSION"],
-      AZURE_MONITOR_OPENTELEMETRY_VERSION,
     );
   });
 
@@ -317,7 +316,7 @@ describe("Main functions", () => {
     expect(meterConfig?.views).toContain(customView);
   });
 
-  it("should set statsbeat features", () => {
+  it("should set SDK Stats features", () => {
     const config: MicrosoftOpenTelemetryOptions = {
       instrumentationOptions: {
         azureSdk: {
@@ -348,28 +347,28 @@ describe("Main functions", () => {
     const output = JSON.parse(String(process.env["AZURE_MONITOR_STATSBEAT_FEATURES"]));
     const features = Number(output["feature"]);
     const instrumentations = Number(output["instrumentation"]);
-    assert.notOk(features & StatsbeatFeature.AAD_HANDLING, "AAD_HANDLING is set");
-    assert.notOk(features & StatsbeatFeature.DISK_RETRY, "DISK_RETRY is set");
-    assert.notOk(features & StatsbeatFeature.BROWSER_SDK_LOADER, "BROWSER_SDK_LOADER is set");
-    assert.ok(features & StatsbeatFeature.DISTRO, "DISTRO is not set");
+    assert.notOk(features & SdkStatsFeature.AAD_HANDLING, "AAD_HANDLING is set");
+    assert.notOk(features & SdkStatsFeature.DISK_RETRY, "DISK_RETRY is set");
+    assert.notOk(features & SdkStatsFeature.BROWSER_SDK_LOADER, "BROWSER_SDK_LOADER is set");
+    assert.ok(features & SdkStatsFeature.DISTRO, "DISTRO is not set");
     assert.strictEqual(features, 8);
     assert.ok(
-      instrumentations & StatsbeatInstrumentation.AZURE_CORE_TRACING,
+      instrumentations & SdkStatsInstrumentation.AZURE_CORE_TRACING,
       "AZURE_CORE_TRACING not set",
     );
-    assert.notOk(features & StatsbeatFeature.SHIM, "SHIM is set");
+    assert.notOk(features & SdkStatsFeature.SHIM, "SHIM is set");
     assert.notOk(
-      features & StatsbeatFeature.AKS_RESOURCE_DETECTOR_POPULATION,
+      features & SdkStatsFeature.AKS_RESOURCE_DETECTOR_POPULATION,
       "AKS_RESOURCE_DETECTOR_POPULATION should not be set",
     );
-    assert.ok(instrumentations & StatsbeatInstrumentation.MONGODB, "MONGODB not set");
-    assert.ok(instrumentations & StatsbeatInstrumentation.MYSQL, "MYSQL not set");
-    assert.ok(instrumentations & StatsbeatInstrumentation.POSTGRES, "POSTGRES not set");
-    assert.ok(instrumentations & StatsbeatInstrumentation.REDIS, "REDIS not set");
+    assert.ok(instrumentations & SdkStatsInstrumentation.MONGODB, "MONGODB not set");
+    assert.ok(instrumentations & SdkStatsInstrumentation.MYSQL, "MYSQL not set");
+    assert.ok(instrumentations & SdkStatsInstrumentation.POSTGRES, "POSTGRES not set");
+    assert.ok(instrumentations & SdkStatsInstrumentation.REDIS, "REDIS not set");
     assert.strictEqual(instrumentations, 31);
   });
 
-  it("should set shim feature in statsbeat if env var is populated", () => {
+  it("should set shim feature in SDK Stats if env var is populated", () => {
     getInstance()["initializedByShim"] = true;
     const config: MicrosoftOpenTelemetryOptions = {
       azureMonitor: {
@@ -381,11 +380,12 @@ describe("Main functions", () => {
     useMicrosoftOpenTelemetry(config);
     const output = JSON.parse(String(process.env["AZURE_MONITOR_STATSBEAT_FEATURES"]));
     const features = Number(output["feature"]);
-    assert.ok(features & StatsbeatFeature.SHIM, `SHIM is not set ${features}`);
+    assert.ok(features & SdkStatsFeature.SHIM, `SHIM is not set ${features}`);
   });
 
   it("should set AKS_RESOURCE_DETECTOR_POPULATION feature when AKS resource attributes are populated", () => {
     const env = <{ [id: string]: string }>{};
+    env.KUBERNETES_SERVICE_HOST = "10.0.0.1";
     env.CLUSTER_RESOURCE_ID =
       "/subscriptions/xxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx/resourceGroups/test-rg/providers/Microsoft.ContainerService/managedClusters/test-cluster";
     process.env = env;
@@ -400,7 +400,7 @@ describe("Main functions", () => {
     const output = JSON.parse(String(process.env["AZURE_MONITOR_STATSBEAT_FEATURES"]));
     const features = Number(output["feature"]);
     assert.ok(
-      features & StatsbeatFeature.AKS_RESOURCE_DETECTOR_POPULATION,
+      features & SdkStatsFeature.AKS_RESOURCE_DETECTOR_POPULATION,
       `AKS_RESOURCE_DETECTOR_POPULATION is not set ${features}`,
     );
   });
@@ -417,17 +417,127 @@ describe("Main functions", () => {
     const output = JSON.parse(String(process.env["AZURE_MONITOR_STATSBEAT_FEATURES"]));
     const features = Number(output["feature"]);
     assert.notOk(
-      features & StatsbeatFeature.AKS_RESOURCE_DETECTOR_POPULATION,
+      features & SdkStatsFeature.AKS_RESOURCE_DETECTOR_POPULATION,
       "AKS_RESOURCE_DETECTOR_POPULATION should not be set",
     );
   });
 
-  it("should use statsbeat features if already available", () => {
+  it("should not set AKS_RESOURCE_DETECTOR_POPULATION feature in AKS when the cluster metadata is not available", () => {
+    const env = <{ [id: string]: string }>{};
+    env.KUBERNETES_SERVICE_HOST = "10.0.0.1";
+    process.env = env;
+    const config: MicrosoftOpenTelemetryOptions = {
+      azureMonitor: {
+        azureMonitorExporterOptions: {
+          connectionString: "InstrumentationKey=00000000-0000-0000-0000-000000000000",
+        },
+      },
+    };
+    useMicrosoftOpenTelemetry(config);
+    const output = JSON.parse(String(process.env["AZURE_MONITOR_STATSBEAT_FEATURES"]));
+    const features = Number(output["feature"]);
+    assert.notOk(
+      features & SdkStatsFeature.AKS_RESOURCE_DETECTOR_POPULATION,
+      "AKS_RESOURCE_DETECTOR_POPULATION should not be set without AKS cluster metadata",
+    );
+  });
+
+  it("should not set AKS_RESOURCE_DETECTOR_POPULATION feature in App Service", () => {
+    const env = <{ [id: string]: string }>{};
+    // App Service populates cloud.resource_id via its own resource detector.
+    env.WEBSITE_SITE_NAME = "testSiteName";
+    env.WEBSITE_OWNER_NAME = "00000000-0000-0000-0000-000000000000+testResourceGroup-CentralUS";
+    env.WEBSITE_RESOURCE_GROUP = "testResourceGroup";
+    process.env = env;
+    const config: MicrosoftOpenTelemetryOptions = {
+      azureMonitor: {
+        azureMonitorExporterOptions: {
+          connectionString: "InstrumentationKey=00000000-0000-0000-0000-000000000000",
+        },
+      },
+    };
+    useMicrosoftOpenTelemetry(config);
+    const output = JSON.parse(String(process.env["AZURE_MONITOR_STATSBEAT_FEATURES"]));
+    const features = Number(output["feature"]);
+    assert.notOk(
+      features & SdkStatsFeature.AKS_RESOURCE_DETECTOR_POPULATION,
+      "AKS_RESOURCE_DETECTOR_POPULATION should not be set in App Service",
+    );
+  });
+
+  it("should not set AKS_RESOURCE_DETECTOR_POPULATION feature for a malformed AKS cluster resource ID", () => {
+    const env = <{ [id: string]: string }>{};
+    env.KUBERNETES_SERVICE_HOST = "10.0.0.1";
+    env.CLUSTER_RESOURCE_ID =
+      "garbage/providers/Microsoft.ContainerService/managedClusters/test-cluster";
+    process.env = env;
+    const config: MicrosoftOpenTelemetryOptions = {
+      azureMonitor: {
+        azureMonitorExporterOptions: {
+          connectionString: "InstrumentationKey=00000000-0000-0000-0000-000000000000",
+        },
+      },
+    };
+    useMicrosoftOpenTelemetry(config);
+    const output = JSON.parse(String(process.env["AZURE_MONITOR_STATSBEAT_FEATURES"]));
+    const features = Number(output["feature"]);
+    assert.notOk(
+      features & SdkStatsFeature.AKS_RESOURCE_DETECTOR_POPULATION,
+      "AKS_RESOURCE_DETECTOR_POPULATION should not be set for a malformed cluster resource ID",
+    );
+  });
+
+  it("should not inherit a seeded AKS_RESOURCE_DETECTOR_POPULATION feature bit", () => {
+    const env = <{ [id: string]: string }>{};
+    // Numeric seed, the format used by the shim.
+    env.AZURE_MONITOR_STATSBEAT_FEATURES =
+      SdkStatsFeature.AKS_RESOURCE_DETECTOR_POPULATION.toString();
+    process.env = env;
+    const config: MicrosoftOpenTelemetryOptions = {
+      azureMonitor: {
+        azureMonitorExporterOptions: {
+          connectionString: "InstrumentationKey=00000000-0000-0000-0000-000000000000",
+        },
+      },
+    };
+    useMicrosoftOpenTelemetry(config);
+    const output = JSON.parse(String(process.env["AZURE_MONITOR_STATSBEAT_FEATURES"]));
+    const features = Number(output["feature"]);
+    assert.notOk(
+      features & SdkStatsFeature.AKS_RESOURCE_DETECTOR_POPULATION,
+      "AKS_RESOURCE_DETECTOR_POPULATION should not be inherited from a numeric seed",
+    );
+  });
+
+  it("should not inherit a seeded AKS_RESOURCE_DETECTOR_POPULATION feature bit in JSON form", () => {
+    const env = <{ [id: string]: string }>{};
+    env.AZURE_MONITOR_STATSBEAT_FEATURES = JSON.stringify({
+      instrumentation: 0,
+      feature: SdkStatsFeature.AKS_RESOURCE_DETECTOR_POPULATION,
+    });
+    process.env = env;
+    const config: MicrosoftOpenTelemetryOptions = {
+      azureMonitor: {
+        azureMonitorExporterOptions: {
+          connectionString: "InstrumentationKey=00000000-0000-0000-0000-000000000000",
+        },
+      },
+    };
+    useMicrosoftOpenTelemetry(config);
+    const output = JSON.parse(String(process.env["AZURE_MONITOR_STATSBEAT_FEATURES"]));
+    const features = Number(output["feature"]);
+    assert.notOk(
+      features & SdkStatsFeature.AKS_RESOURCE_DETECTOR_POPULATION,
+      "AKS_RESOURCE_DETECTOR_POPULATION should not be inherited from a JSON seed",
+    );
+  });
+
+  it("should use SDK Stats features if already available", () => {
     const env = <{ [id: string]: string }>{};
     let current = 0;
-    current |= StatsbeatFeature.AAD_HANDLING;
-    current |= StatsbeatFeature.DISK_RETRY;
-    current |= StatsbeatFeature.LIVE_METRICS;
+    current |= SdkStatsFeature.AAD_HANDLING;
+    current |= SdkStatsFeature.DISK_RETRY;
+    current |= SdkStatsFeature.LIVE_METRICS;
     env.AZURE_MONITOR_STATSBEAT_FEATURES = current.toString();
     process.env = env;
     const config: MicrosoftOpenTelemetryOptions = {
@@ -440,11 +550,11 @@ describe("Main functions", () => {
     useMicrosoftOpenTelemetry(config);
     const output = JSON.parse(String(process.env["AZURE_MONITOR_STATSBEAT_FEATURES"]));
     const numberOutput = Number(output["feature"]);
-    assert.ok(numberOutput & StatsbeatFeature.AAD_HANDLING, "AAD_HANDLING not set");
-    assert.ok(numberOutput & StatsbeatFeature.DISK_RETRY, "DISK_RETRY not set");
-    assert.ok(numberOutput & StatsbeatFeature.DISTRO, "DISTRO not set");
-    assert.notOk(numberOutput & StatsbeatFeature.BROWSER_SDK_LOADER, "BROWSER_SDK_LOADER is set");
-    assert.ok(numberOutput & StatsbeatFeature.LIVE_METRICS, "LIVE_METRICS is not set");
+    assert.ok(numberOutput & SdkStatsFeature.AAD_HANDLING, "AAD_HANDLING not set");
+    assert.ok(numberOutput & SdkStatsFeature.DISK_RETRY, "DISK_RETRY not set");
+    assert.ok(numberOutput & SdkStatsFeature.DISTRO, "DISTRO not set");
+    assert.notOk(numberOutput & SdkStatsFeature.BROWSER_SDK_LOADER, "BROWSER_SDK_LOADER is set");
+    assert.ok(numberOutput & SdkStatsFeature.LIVE_METRICS, "LIVE_METRICS is not set");
   });
 
   it("should capture the app service SDK prefix correctly", () => {
@@ -588,7 +698,7 @@ describe("Main functions", () => {
     });
   });
 
-  it("should update statsbeat env var based on reading instrumentations array", () => {
+  it("should update SDK Stats env var based on reading instrumentations array", () => {
     const config: MicrosoftOpenTelemetryOptions = {
       instrumentationOptions: {
         azureSdk: { enabled: false },
@@ -608,28 +718,28 @@ describe("Main functions", () => {
       },
     };
     useMicrosoftOpenTelemetry(config);
-    const emptyStatsbeatConfig: string = JSON.stringify({ instrumentation: 0, feature: 0 });
+    const emptySdkStatsConfig: string = JSON.stringify({ instrumentation: 0, feature: 0 });
 
-    const statsbeatOptions: StatsbeatEnvironmentConfig = JSON.parse(
-      process.env[AZURE_MONITOR_STATSBEAT_FEATURES] || emptyStatsbeatConfig,
+    const sdkStatsOptions: SdkStatsEnvironmentConfig = JSON.parse(
+      process.env[AZURE_MONITOR_STATSBEAT_FEATURES] || emptySdkStatsConfig,
     );
     const instrumentations = [testInstrumentation];
-    let updatedStatsbeat = { instrumentation: 0, feature: 0 };
+    let updatedSdkStats = { instrumentation: 0, feature: 0 };
 
-    // Dynamic statsbeat update logic
+    // Dynamic SDK Stats update logic
     for (let i = 0; i < instrumentations.length; i++) {
-      updatedStatsbeat = {
-        instrumentation: (statsbeatOptions.instrumentation |=
-          StatsbeatInstrumentationMap.get(instrumentations[i].instrumentationName) || 0),
-        feature: statsbeatOptions.feature,
+      updatedSdkStats = {
+        instrumentation: (sdkStatsOptions.instrumentation |=
+          SdkStatsInstrumentationMap.get(instrumentations[i].instrumentationName) || 0),
+        feature: sdkStatsOptions.feature,
       };
     }
-    assert.strictEqual(updatedStatsbeat.instrumentation, StatsbeatInstrumentation.FS);
+    assert.strictEqual(updatedSdkStats.instrumentation, SdkStatsInstrumentation.FS);
   });
 
   it("should detect MULTI_IKEY feature when AZURE_MONITOR_STATSBEAT_FEATURES has MULTI_IKEY enabled", () => {
     const env = <{ [id: string]: string }>{};
-    env[AZURE_MONITOR_STATSBEAT_FEATURES] = String(StatsbeatFeature.MULTI_IKEY);
+    env[AZURE_MONITOR_STATSBEAT_FEATURES] = String(SdkStatsFeature.MULTI_IKEY);
     process.env = env;
     const config: MicrosoftOpenTelemetryOptions = {
       azureMonitor: {
@@ -643,13 +753,13 @@ describe("Main functions", () => {
       feature?: number;
     };
     const features = Number(output["feature"] || 0);
-    assert.ok(features & StatsbeatFeature.MULTI_IKEY, "MULTI_IKEY not detected");
+    assert.ok(features & SdkStatsFeature.MULTI_IKEY, "MULTI_IKEY not detected");
     void shutdownMicrosoftOpenTelemetry();
   });
 
   it("should not detect MULTI_IKEY feature when AZURE_MONITOR_STATSBEAT_FEATURES has MULTI_IKEY disabled", () => {
     const env = <{ [id: string]: string }>{};
-    env[AZURE_MONITOR_STATSBEAT_FEATURES] = String(StatsbeatFeature.DISTRO);
+    env[AZURE_MONITOR_STATSBEAT_FEATURES] = String(SdkStatsFeature.DISTRO);
     process.env = env;
     const config: MicrosoftOpenTelemetryOptions = {
       azureMonitor: {
@@ -664,7 +774,7 @@ describe("Main functions", () => {
     };
     const features = Number(output["feature"] || 0);
     assert.ok(
-      !(features & StatsbeatFeature.MULTI_IKEY),
+      !(features & SdkStatsFeature.MULTI_IKEY),
       "MULTI_IKEY detected when it should not be",
     );
     void shutdownMicrosoftOpenTelemetry();
@@ -687,10 +797,10 @@ describe("Main functions", () => {
     };
     const features = Number(output["feature"] || 0);
     assert.ok(
-      features & StatsbeatFeature.CUSTOMER_SDKSTATS,
+      features & SdkStatsFeature.CUSTOMER_SDKSTATS,
       "CUSTOMER_SDKSTATS feature should be detected when customer explicitly disables SDK stats",
     );
-    assert.ok(features & StatsbeatFeature.DISTRO, "DISTRO feature should also be set");
+    assert.ok(features & SdkStatsFeature.DISTRO, "DISTRO feature should also be set");
     void shutdownMicrosoftOpenTelemetry();
   });
 
@@ -711,10 +821,10 @@ describe("Main functions", () => {
     };
     const features = Number(output["feature"] || 0);
     assert.ok(
-      !(features & StatsbeatFeature.CUSTOMER_SDKSTATS),
+      !(features & SdkStatsFeature.CUSTOMER_SDKSTATS),
       "CUSTOMER_SDKSTATS feature should not be detected when env var is not 'true'",
     );
-    assert.ok(features & StatsbeatFeature.DISTRO, "DISTRO feature should still be set");
+    assert.ok(features & SdkStatsFeature.DISTRO, "DISTRO feature should still be set");
     void shutdownMicrosoftOpenTelemetry();
   });
 
@@ -735,10 +845,10 @@ describe("Main functions", () => {
     };
     const features = Number(output["feature"] || 0);
     assert.ok(
-      !(features & StatsbeatFeature.CUSTOMER_SDKSTATS),
+      !(features & SdkStatsFeature.CUSTOMER_SDKSTATS),
       "CUSTOMER_SDKSTATS feature should not be detected when env var is undefined",
     );
-    assert.ok(features & StatsbeatFeature.DISTRO, "DISTRO feature should still be set");
+    assert.ok(features & SdkStatsFeature.DISTRO, "DISTRO feature should still be set");
     void shutdownMicrosoftOpenTelemetry();
   });
 
@@ -911,20 +1021,20 @@ describe("Main functions", () => {
       }
     }
 
-    // Azure Monitor statsbeat env var should reflect OTLP-only scenario
-    const statsbeatRaw = process.env["AZURE_MONITOR_STATSBEAT_FEATURES"];
-    if (statsbeatRaw) {
-      const statsbeat = JSON.parse(statsbeatRaw);
+    // Azure Monitor SDK Stats env var should reflect OTLP-only scenario
+    const sdkStatsRaw = process.env["AZURE_MONITOR_STATSBEAT_FEATURES"];
+    if (sdkStatsRaw) {
+      const sdkStats = JSON.parse(sdkStatsRaw);
       // DISTRO feature SHOULD be set — the distro is being used regardless of backend
-      expect(statsbeat.feature & StatsbeatFeature.DISTRO).toBeTruthy();
+      expect(sdkStats.feature & SdkStatsFeature.DISTRO).toBeTruthy();
       // OTLP feature should be set
-      expect(statsbeat.feature & StatsbeatFeature.OTLP).toBeTruthy();
+      expect(sdkStats.feature & SdkStatsFeature.OTLP).toBeTruthy();
     }
 
     void shutdownMicrosoftOpenTelemetry();
   });
 
-  it("should set A365 feature bit in statsbeat when A365 is enabled", () => {
+  it("should set A365 feature bit in SDK Stats when A365 is enabled", () => {
     const env = <{ [id: string]: string }>{};
     process.env = env;
 
@@ -939,7 +1049,7 @@ describe("Main functions", () => {
 
     const output = JSON.parse(String(process.env[AZURE_MONITOR_STATSBEAT_FEATURES]));
     const features = Number(output.feature);
-    assert.ok(features & StatsbeatFeature.A365, "A365 feature bit should be set");
+    assert.ok(features & SdkStatsFeature.A365, "A365 feature bit should be set");
 
     void shutdownMicrosoftOpenTelemetry();
   });
@@ -957,13 +1067,13 @@ describe("Main functions", () => {
     if (raw) {
       const output = JSON.parse(raw);
       const features = Number(output.feature);
-      assert.notOk(features & StatsbeatFeature.A365, "A365 feature bit should not be set");
+      assert.notOk(features & SdkStatsFeature.A365, "A365 feature bit should not be set");
     }
 
     void shutdownMicrosoftOpenTelemetry();
   });
 
-  it("should set OTLP feature bit in statsbeat when OTLP endpoint is configured", () => {
+  it("should set OTLP feature bit in SDK Stats when OTLP endpoint is configured", () => {
     const env = <{ [id: string]: string }>{};
     env.OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4318";
     process.env = env;
@@ -975,7 +1085,7 @@ describe("Main functions", () => {
 
     const output = JSON.parse(String(process.env[AZURE_MONITOR_STATSBEAT_FEATURES]));
     const features = Number(output.feature);
-    assert.ok(features & StatsbeatFeature.OTLP, "OTLP feature bit should be set");
+    assert.ok(features & SdkStatsFeature.OTLP, "OTLP feature bit should be set");
 
     void shutdownMicrosoftOpenTelemetry();
   });
@@ -994,7 +1104,7 @@ describe("Main functions", () => {
 
     const output = JSON.parse(String(process.env[AZURE_MONITOR_STATSBEAT_FEATURES]));
     const features = Number(output.feature);
-    assert.notOk(features & StatsbeatFeature.OTLP, "OTLP feature bit should not be set");
+    assert.notOk(features & SdkStatsFeature.OTLP, "OTLP feature bit should not be set");
 
     void shutdownMicrosoftOpenTelemetry();
   });
@@ -1015,8 +1125,8 @@ describe("Main functions", () => {
 
     const output = JSON.parse(String(process.env[AZURE_MONITOR_STATSBEAT_FEATURES]));
     const features = Number(output.feature);
-    assert.ok(features & StatsbeatFeature.A365, "A365 feature bit should be set");
-    assert.ok(features & StatsbeatFeature.OTLP, "OTLP feature bit should be set");
+    assert.ok(features & SdkStatsFeature.A365, "A365 feature bit should be set");
+    assert.ok(features & SdkStatsFeature.OTLP, "OTLP feature bit should be set");
 
     void shutdownMicrosoftOpenTelemetry();
   });
@@ -1097,6 +1207,38 @@ describe("Main functions", () => {
       a365SpanProcessor,
       "Expected A365SpanProcessor to be registered when A365 is enabled",
     );
+
+    await shutdownMicrosoftOpenTelemetry();
+  });
+
+  it("does not register configured OpenAI tracer names as A365 fallback scopes", async () => {
+    const tracerName = "custom-openai-scope";
+    useMicrosoftOpenTelemetry({
+      azureMonitor: { enabled: false },
+      enableConsoleExporters: false,
+      a365: {
+        enabled: true,
+        tokenResolver: () => "token",
+      },
+      instrumentationOptions: {
+        openaiAgents: {
+          enabled: false,
+          tracerName,
+        },
+        langchain: { enabled: false },
+      },
+    });
+
+    const internalSdk = _getSdkInstance();
+    const tracerProvider = (internalSdk as any)["_tracerProvider"];
+    const registeredProcessors =
+      tracerProvider?.["_activeSpanProcessor"]?.["_spanProcessors"] || [];
+    const processor = registeredProcessors.find(
+      (candidate: any) => candidate.constructor?.name === "A365SpanProcessor",
+    );
+
+    assert.isDefined(processor);
+    assert.isFalse(processor["genAiInstrumentationScopeNames"].has(tracerName));
 
     await shutdownMicrosoftOpenTelemetry();
   });
@@ -1286,7 +1428,7 @@ describe("Main functions", () => {
     assert.strictEqual(instrumentationOptions.langchain.enabled, true);
   });
 
-  it("preserves BatchSpanProcessor defaults when A365 exporter tuning is omitted", async () => {
+  it("applies A365 exporter defaults to the wrapping BatchSpanProcessor when tuning is omitted", async () => {
     useMicrosoftOpenTelemetry({
       azureMonitor: { enabled: false },
       enableConsoleExporters: false,
@@ -1311,7 +1453,47 @@ describe("Main functions", () => {
     );
 
     assert.isDefined(batchProcessor, "Expected an Agent365 BatchSpanProcessor");
-    assert.strictEqual(batchProcessor["_exportTimeoutMillis"], 30000);
+    assert.strictEqual(batchProcessor["_maxQueueSize"], 2048);
+    assert.strictEqual(batchProcessor["_scheduledDelayMillis"], 5000);
+    assert.strictEqual(batchProcessor["_maxExportBatchSize"], 512);
+    assert.strictEqual(batchProcessor["_exportTimeoutMillis"], 90000);
+
+    await shutdownMicrosoftOpenTelemetry();
+  });
+
+  it("forwards A365 exporter batching options to the wrapping BatchSpanProcessor", async () => {
+    useMicrosoftOpenTelemetry({
+      azureMonitor: { enabled: false },
+      enableConsoleExporters: false,
+      a365: {
+        enabled: true,
+        enableObservabilityExporter: true,
+        tokenResolver: () => "token",
+        maxQueueSize: 4096,
+        scheduledDelayMilliseconds: 1234,
+        maxExportBatchSize: 256,
+        exporterTimeoutMilliseconds: 45000,
+      },
+    });
+
+    const internalSdk = _getSdkInstance();
+    assert.isDefined(internalSdk);
+
+    const tracerProvider = (internalSdk as any)["_tracerProvider"];
+    const activeSpanProcessor = tracerProvider?.["_activeSpanProcessor"];
+    const registeredProcessors = activeSpanProcessor?.["_spanProcessors"] || [];
+
+    const batchProcessor = registeredProcessors.find(
+      (processor: any) =>
+        processor.constructor?.name === "BatchSpanProcessor" &&
+        processor["_exporter"]?.constructor?.name === "Agent365Exporter",
+    );
+
+    assert.isDefined(batchProcessor, "Expected an Agent365 BatchSpanProcessor");
+    assert.strictEqual(batchProcessor["_maxQueueSize"], 4096);
+    assert.strictEqual(batchProcessor["_scheduledDelayMillis"], 1234);
+    assert.strictEqual(batchProcessor["_maxExportBatchSize"], 256);
+    assert.strictEqual(batchProcessor["_exportTimeoutMillis"], 45000);
 
     await shutdownMicrosoftOpenTelemetry();
   });
@@ -1348,6 +1530,67 @@ describe("Main functions", () => {
     await shutdownMicrosoftOpenTelemetry();
   });
 
+  it("propagates a365 durableDelivery options to the Agent365Exporter", async () => {
+    const storageDirectory = await mkdtemp(join(tmpdir(), "a365-spool-"));
+    type Agent365BatchProcessor = {
+      constructor?: { name?: string };
+      _exporter?: {
+        constructor?: { name?: string };
+        options?: {
+          durableDelivery?: {
+            storageDirectory?: string;
+          };
+        };
+      };
+    };
+    type InternalSdk = {
+      _tracerProvider?: {
+        _activeSpanProcessor?: {
+          _spanProcessors?: Agent365BatchProcessor[];
+        };
+      };
+    };
+
+    try {
+      useMicrosoftOpenTelemetry({
+        azureMonitor: { enabled: false },
+        enableConsoleExporters: false,
+        a365: {
+          enabled: true,
+          enableObservabilityExporter: true,
+          tokenResolver: () => "token",
+          durableDelivery: {
+            enabled: true,
+            storageDirectory,
+            maxStorageBytes: 1024,
+          },
+        },
+      });
+
+      const internalSdk = _getSdkInstance();
+      assert.isDefined(internalSdk);
+
+      const tracerProvider = (internalSdk as InternalSdk)["_tracerProvider"];
+      const activeSpanProcessor = tracerProvider?.["_activeSpanProcessor"];
+      const registeredProcessors = activeSpanProcessor?.["_spanProcessors"] || [];
+
+      const batchProcessor = registeredProcessors.find(
+        (processor) =>
+          processor.constructor?.name === "BatchSpanProcessor" &&
+          processor["_exporter"]?.constructor?.name === "Agent365Exporter",
+      );
+
+      assert.isDefined(batchProcessor, "Expected an Agent365 BatchSpanProcessor");
+      assert.strictEqual(
+        batchProcessor["_exporter"]?.["options"]?.durableDelivery?.storageDirectory,
+        storageDirectory,
+      );
+    } finally {
+      await shutdownMicrosoftOpenTelemetry().catch(() => undefined);
+      await rm(storageDirectory, { recursive: true, force: true });
+    }
+  });
+
   it("applies a365.logLevel to the A365 logger filter via configureA365Logger", async () => {
     const { _resetA365LoggerForTest, getA365Logger } = await import("../../../src/a365/logging.js");
     _resetA365LoggerForTest();
@@ -1379,36 +1622,39 @@ describe("Main functions", () => {
     _resetA365LoggerForTest();
   });
 
-  it("initializes OpenAI Agents instrumentation when enabled", async () => {
-    const instrumentSpy = vi.spyOn(OpenAIAgentsTraceInstrumentor, "instrument");
+  it.each(["openai-agent-auto-instrumentation", "  openai-agent-auto-instrumentation  ", ""])(
+    "initializes OpenAI Agents instrumentation with exact tracer name %j",
+    async (tracerName) => {
+      const instrumentSpy = vi.spyOn(OpenAIAgentsTraceInstrumentor, "instrument");
 
-    useMicrosoftOpenTelemetry({
-      azureMonitor: { enabled: false },
-      enableConsoleExporters: false,
-      instrumentationOptions: {
-        openaiAgents: {
-          enabled: true,
-          tracerName: "openai-agent-auto-instrumentation",
-          tracerVersion: "1.0.0",
-          isContentRecordingEnabled: true,
+      useMicrosoftOpenTelemetry({
+        azureMonitor: { enabled: false },
+        enableConsoleExporters: false,
+        instrumentationOptions: {
+          openaiAgents: {
+            enabled: true,
+            tracerName,
+            tracerVersion: "1.0.0",
+            isContentRecordingEnabled: true,
+          },
+          langchain: { enabled: false },
         },
-        langchain: { enabled: false },
-      },
-    });
+      });
 
-    await vi.waitFor(() => {
-      expect(instrumentSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          enabled: true,
-          tracerName: "openai-agent-auto-instrumentation",
-          tracerVersion: "1.0.0",
-          isContentRecordingEnabled: true,
-        }),
-      );
-    });
+      await vi.waitFor(() => {
+        expect(instrumentSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            enabled: true,
+            tracerName,
+            tracerVersion: "1.0.0",
+            isContentRecordingEnabled: true,
+          }),
+        );
+      });
 
-    await shutdownMicrosoftOpenTelemetry();
-  });
+      await shutdownMicrosoftOpenTelemetry();
+    },
+  );
 
   it("initializes LangChain instrumentation when enabled", async () => {
     const instrumentSpy = vi.spyOn(LangChainTraceInstrumentor, "instrument");
@@ -1425,7 +1671,35 @@ describe("Main functions", () => {
     });
 
     await vi.waitFor(() => {
-      expect(instrumentSpy).toHaveBeenCalledWith(expect.any(Object));
+      expect(instrumentSpy).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({ enableSensitiveData: false }),
+      );
+    });
+
+    await shutdownMicrosoftOpenTelemetry();
+  });
+
+  it("forwards enableSensitiveData to LangChain instrumentation when set", async () => {
+    const instrumentSpy = vi.spyOn(LangChainTraceInstrumentor, "instrument");
+
+    useMicrosoftOpenTelemetry({
+      azureMonitor: { enabled: false },
+      enableConsoleExporters: false,
+      enableSensitiveData: true,
+      instrumentationOptions: {
+        openaiAgents: { enabled: false },
+        langchain: {
+          enabled: true,
+        },
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(instrumentSpy).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({ enableSensitiveData: true }),
+      );
     });
 
     await shutdownMicrosoftOpenTelemetry();
@@ -1486,5 +1760,104 @@ describe("Main functions", () => {
     });
 
     await shutdownMicrosoftOpenTelemetry();
+  });
+
+  describe("console instrumentation", () => {
+    it("patches the global console when enabled and restores it on shutdown (unpatch)", async () => {
+      const original = console.log;
+      useMicrosoftOpenTelemetry({
+        azureMonitor: { enabled: false },
+        enableConsoleExporters: false,
+        instrumentationOptions: {
+          console: { enabled: true },
+          openaiAgents: { enabled: false },
+          langchain: { enabled: false },
+        },
+      });
+
+      expect(console.log).not.toBe(original);
+
+      await shutdownMicrosoftOpenTelemetry();
+      // Shutdown must unpatch console — NodeSDK.shutdown() does not do this on its own.
+
+      expect(console.log).toBe(original);
+    });
+
+    it("does not patch the global console when console instrumentation is disabled (default)", async () => {
+      const original = console.log;
+      useMicrosoftOpenTelemetry({
+        azureMonitor: { enabled: false },
+        enableConsoleExporters: false,
+        instrumentationOptions: {
+          openaiAgents: { enabled: false },
+          langchain: { enabled: false },
+        },
+      });
+
+      expect(console.log).toBe(original);
+      await shutdownMicrosoftOpenTelemetry();
+    });
+
+    it("does not leak a stale console patch across re-initialization", async () => {
+      const original = console.log;
+      const options: MicrosoftOpenTelemetryOptions = {
+        azureMonitor: { enabled: false },
+        enableConsoleExporters: false,
+        instrumentationOptions: {
+          console: { enabled: true },
+          openaiAgents: { enabled: false },
+          langchain: { enabled: false },
+        },
+      };
+      useMicrosoftOpenTelemetry(options);
+
+      const firstPatch = console.log;
+      expect(firstPatch).not.toBe(original);
+
+      // Re-init should disable the previous console instrumentation (restoring
+      // console) before installing a fresh patch, so no double-patching occurs.
+      useMicrosoftOpenTelemetry(options);
+
+      const secondPatch = console.log;
+      expect(secondPatch).not.toBe(original);
+      expect(secondPatch).not.toBe(firstPatch);
+
+      await shutdownMicrosoftOpenTelemetry();
+      // A single disable must fully restore the original — proving there is only
+      // one active console patch, not a stack of them.
+
+      expect(console.log).toBe(original);
+    });
+
+    it("emits a log record when console.log is called with console instrumentation enabled", async () => {
+      const processor: LogRecordProcessor = {
+        forceFlush: () => Promise.resolve(),
+        onEmit(_logRecord: SdkLogRecord, _context?: Context) {
+          /* no-op */
+        },
+        shutdown: () => Promise.resolve(),
+      };
+      const onEmitSpy = vi.spyOn(processor, "onEmit");
+      useMicrosoftOpenTelemetry({
+        azureMonitor: { enabled: false },
+        enableConsoleExporters: false,
+        logRecordProcessors: [processor],
+        instrumentationOptions: {
+          console: { enabled: true },
+          openaiAgents: { enabled: false },
+          langchain: { enabled: false },
+        },
+      });
+
+      console.log("console-instrumentation-emit-test");
+      expect(onEmitSpy).toHaveBeenCalled();
+      const emitted = onEmitSpy.mock.calls.some(
+        (call) =>
+          String((call[0] as SdkLogRecord).body).indexOf("console-instrumentation-emit-test") > -1,
+      );
+      expect(emitted).toBe(true);
+
+      await shutdownMicrosoftOpenTelemetry();
+    });
   });
 });

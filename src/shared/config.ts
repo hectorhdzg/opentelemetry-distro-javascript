@@ -16,6 +16,7 @@ import type {
 import type { Sampler } from "@opentelemetry/sdk-trace-base";
 import type { AzureMonitorExporterOptions } from "@azure/monitor-opentelemetry-exporter";
 import { EnvConfig } from "./envConfig.js";
+import { isAksResourceDetectorPopulated } from "../azureMonitor/utils/common.js";
 import {
   azureAksDetector,
   azureAppServiceDetector,
@@ -51,6 +52,7 @@ export class InternalConfig {
   public sampler?: Sampler;
 
   private _resource: Resource = emptyResource();
+  private _aksResourceDetectorPopulated: boolean = false;
 
   public set resource(resource: Resource) {
     this._resource = this._resource.merge(resource);
@@ -63,11 +65,20 @@ export class InternalConfig {
     return this._resource;
   }
 
+  /**
+   * Whether the AKS resource detector was able to populate the AKS cluster attributes, which
+   * requires the customer to have configured access to the `aks-cluster-metadata` ConfigMap.
+   * @internal
+   */
+  public get aksResourceDetectorPopulated(): boolean {
+    return this._aksResourceDetectorPopulated;
+  }
+
   public browserSdkLoaderOptions: BrowserSdkLoaderOptions;
 
   /**
    * Initializes a new instance of InternalConfig.
-   * Accepts MicrosoftOpenTelemetryOptions (distro-level) — global options come
+   * Accepts MicrosoftOpenTelemetryOptions (top-level) — global options come
    * from the top level, Azure Monitor-specific options from the azureMonitor key.
    */
   constructor(options?: MicrosoftOpenTelemetryOptions) {
@@ -160,11 +171,18 @@ export class InternalConfig {
     const envResource = detectResources(detectResourceConfig);
     resource = resource.merge(envResource);
 
-    // Load resource attributes from Azure
-    const azureResource: Resource = detectResources({
-      detectors: [azureAksDetector, azureAppServiceDetector, azureFunctionsDetector],
+    // Load resource attributes from Azure. AKS is detected on its own so that we can tell
+    // whether the AKS detector itself populated the cluster attributes - other detectors and the
+    // customer can populate the same attributes without AKS being involved.
+    const aksResource: Resource = detectResources({
+      detectors: [azureAksDetector],
     });
-    this._resource = resource.merge(azureResource);
+    this._aksResourceDetectorPopulated = isAksResourceDetectorPopulated(aksResource.attributes);
+
+    const azureResource: Resource = detectResources({
+      detectors: [azureAppServiceDetector, azureFunctionsDetector],
+    });
+    this._resource = resource.merge(aksResource).merge(azureResource);
 
     // Handle VM resource detection asynchronously to avoid warnings
     // about accessing resource attributes before async attributes are settled

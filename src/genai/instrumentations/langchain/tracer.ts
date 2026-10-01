@@ -31,21 +31,38 @@ type RunWithSpan = { run: Run; span: Span; startTime: number; lastAccessTime: nu
  * - Skips LangChain-internal runs (tagged `langsmith:hidden`, `Branch*`, or
  *   unmapped run types) to avoid noisy traces.
  * - Guards against unbounded memory with a hard cap of {@link MAX_RUNS}.
- * - Content attributes (messages, tool args) are always recorded
- *   (aligned with Python/.NET SDKs).
+ * - Content attributes (messages, tool args/results, system instructions) are
+ *   only recorded when {@link enableSensitiveData} is enabled. Sensitive data
+ *   is hidden by default.
  */
 export class LangChainTracer extends BaseTracer {
   /** Hard cap on concurrent tracked runs to prevent memory leaks. */
   private static readonly MAX_RUNS = 10_000;
   private tracer: Tracer;
+  /**
+   * When true, sensitive message content (prompts, completions, tool
+   * arguments/results, system instructions) is captured on spans. Hidden by
+   * default.
+   */
+  private enableSensitiveData: boolean;
   /** Active runs keyed by LangChain run ID. */
   private runs = new Map<string, RunWithSpan>();
   /** Maps each run ID → its parent run ID for parent-span-context lookup. */
   private parentByRunId = new Map<string, string | undefined>();
 
-  constructor(tracer: Tracer) {
+  constructor(tracer: Tracer, enableSensitiveData = false) {
     super();
     this.tracer = tracer;
+    this.enableSensitiveData = enableSensitiveData;
+  }
+
+  /**
+   * Update whether sensitive message content is captured on spans. Used to
+   * reconcile an already-attached tracer with the latest instrumentation
+   * configuration (e.g. on re-instrumentation) so the flag never goes stale.
+   */
+  setEnableSensitiveData(enableSensitiveData: boolean): void {
+    this.enableSensitiveData = enableSensitiveData;
   }
 
   name = "OpenTelemetryLangChainTracer";
@@ -88,10 +105,13 @@ export class LangChainTracer extends BaseTracer {
       return;
     }
 
-    // Attach to parent span if one exists in the run hierarchy
-    const parentCtx = this.getNearestParentSpanContext(run);
-    const activeContext = parentCtx
-      ? trace.setSpanContext(context.active(), parentCtx)
+    // Attach to parent span if one exists in the run hierarchy. We put the
+    // actual parent Span (not just its SpanContext) into the context so that
+    // span processors observing on_start of this span (e.g.
+    // GenAIMainAgentSpanProcessor) can read attributes off the parent.
+    const parentSpan = this.getNearestParentSpan(run);
+    const activeContext = parentSpan
+      ? trace.setSpan(context.active(), parentSpan)
       : context.active();
 
     // Build span name: "<operation> <name|model>"
@@ -124,6 +144,21 @@ export class LangChainTracer extends BaseTracer {
       },
       activeContext,
     );
+
+    // Set identity attributes (operation, agent, session/conversation) BEFORE
+    // any child run starts, so that span processors observing on_start of
+    // child spans (e.g. GenAIMainAgentSpanProcessor) can read them from this
+    // parent span. Output/usage/model attributes are still set at end time
+    // because their values are not known yet.
+    try {
+      Utils.setOperationTypeAttribute(operation, span);
+      Utils.setAgentAttributes(run, span);
+      Utils.setSessionIdAttribute(run, span);
+    } catch (error) {
+      diag.debug(
+        `[LangChainTracer] Failed to set start-time attributes for run ${run.name}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
 
     this.runs.set(run.id, { run, span, startTime, lastAccessTime: startTime });
   }
@@ -178,7 +213,11 @@ export class LangChainTracer extends BaseTracer {
         span.setStatus({ code: SpanStatusCode.OK });
       }
 
-      // Always-on attributes: operation type, agent info, model, provider, session, tokens
+      // Always-on attributes: operation type, agent info, model, provider, session, tokens.
+      // Operation/agent/session are also set at span start so that
+      // GenAIMainAgentSpanProcessor.onStart sees them on child spans; setting
+      // them again here is idempotent and guarantees end-time corrections
+      // (e.g. metadata that only becomes available mid-run) still land.
       Utils.setOperationTypeAttribute(operation, span);
       Utils.setAgentAttributes(run, span);
       if (operation === "invoke_agent") {
@@ -188,16 +227,25 @@ export class LangChainTracer extends BaseTracer {
         }
       }
       Utils.setModelAttribute(run, span);
+      Utils.setChoiceCountAttribute(run, span);
+      Utils.setRequestAttributes(run, span);
       Utils.setResponseIdAttribute(run, span);
+      Utils.setFinishReasonsAttribute(run, span);
       Utils.setProviderNameAttribute(run, span);
       Utils.setSessionIdAttribute(run, span);
       Utils.setTokenAttributes(run, span);
 
-      // Content attributes — always recorded (aligned with Python/.NET SDKs)
-      Utils.setToolAttributes(run, span);
-      Utils.setInputMessagesAttribute(run, span);
-      Utils.setOutputMessagesAttribute(run, span);
-      Utils.setSystemInstructionsAttribute(run, span);
+      // Content attributes (messages, tool args/results, system instructions)
+      // are sensitive and only recorded when `enableSensitiveData` is set.
+      // Non-content tool attributes (name, type, call id) are always set by
+      // setToolAttributes.
+      const captureContent = this.enableSensitiveData;
+      Utils.setToolAttributes(run, span, captureContent);
+      if (captureContent) {
+        Utils.setInputMessagesAttribute(run, span);
+        Utils.setOutputMessagesAttribute(run, span);
+        Utils.setSystemInstructionsAttribute(run, span);
+      }
     } catch (error) {
       diag.error(
         `[LangChainTracer] Error setting span attributes for run ${run.name}: ${error instanceof Error ? error.message : String(error)}`,
@@ -213,15 +261,15 @@ export class LangChainTracer extends BaseTracer {
 
   /**
    * Walks up the parent run chain to find the nearest ancestor that has an
-   * active span, returning its `SpanContext` so the new span can be linked
-   * as a child.
+   * active span, returning that Span so the new span can be linked as a
+   * child and processors can read parent attributes.
    */
-  private getNearestParentSpanContext(run: Run) {
+  private getNearestParentSpan(run: Run) {
     let pid = run.parent_run_id;
 
     while (pid) {
       const entry = this.runs.get(pid);
-      if (entry) return entry.span.spanContext();
+      if (entry) return entry.span;
       pid = this.parentByRunId.get(pid);
     }
     return undefined;
