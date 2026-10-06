@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-06
+
 ### Bugs Fixed
 - Update `@grpc/grpc-js` from 1.14.4 to 1.14.5 in the root and AKS LangChain sample lockfiles to address [CVE-2026-101915](https://github.com/advisories/GHSA-f596-whhp-79r4) and [CVE-2026-101916](https://github.com/advisories/GHSA-m9gg-hp2v-232j).
 - A365: centralize shared request attributes in the base scope, including session and conversation IDs, channel details, and `operationSource` as `service.name`, while retaining last-write-wins `recordAttributes()` behavior. [#243](https://github.com/microsoft/opentelemetry-distro-javascript/pull/243)
